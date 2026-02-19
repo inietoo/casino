@@ -1,2 +1,21 @@
-/* BLACKJACK CSS - Estilos mesa Blackjack */
-/* Subir código aquí */
+.bj-container { display: flex; height: 100vh; overflow: hidden; }
+.bj-table { flex: 1; background: radial-gradient(circle, var(--green-felt), #0a1f12); padding: 20px; position: relative; display: flex; flex-direction: column; align-items: center; }
+
+.dealer-zone { min-height: 150px; margin-top: 2vh; text-align: center; }
+.players-zone { display: flex; justify-content: center; gap: 30px; width: 100%; margin-top: 5vh; flex-wrap: wrap; }
+
+.player-spot { border: 2px dashed rgba(255,255,255,0.2); border-radius: 10px; padding: 15px; text-align: center; min-width: 130px; transition: 0.3s; background: rgba(0,0,0,0.4); }
+.player-spot.active-turn { box-shadow: 0 0 20px var(--gold); border-color: var(--gold); transform: scale(1.05); }
+
+.player-name { font-weight: bold; margin-bottom: 5px; }
+.player-bet { color: yellow; font-size: 14px; margin-bottom: 5px; }
+.player-status { margin-top: 10px; font-weight: bold; color: #0f0; text-transform: uppercase; }
+
+.controls-bar { position: absolute; bottom: 30px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 10px; display: flex; gap: 10px; align-items: center; border: 1px solid #333;}
+.controls-bar input { padding: 10px; width: 80px; border-radius: 5px; border: none; font-size: 16px; font-weight: bold; text-align: center; }
+
+.chat-sidebar { width: 320px; background: var(--nav-bg); border-left: 2px solid var(--gold); display: flex; flex-direction: column; }
+.chat-messages { flex: 1; overflow-y: auto; padding: 15px; font-size: 14px; line-height: 1.5; }
+.chat-messages div { margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 5px; }
+.chat-input-area { padding: 15px; display: flex; gap: 5px; background: #000; }
+.chat-input-area input { flex: 1; padding: 10px; border: 1px solid #444; background: #222; color: #fff; border-radius: 4px; }
