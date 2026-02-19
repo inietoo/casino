@@ -1,0 +1,2 @@
+-- CASINO SQL - Importar en phpMyAdmin para crear todas las tablas
+-- Subir código aquí
