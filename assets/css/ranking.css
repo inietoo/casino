@@ -1,2 +1,13 @@
-/* RANKING CSS - Estilos tabla de clasificación */
-/* Subir código aquí */
+.ranking-header { text-align: center; padding: 40px 0; position: relative; }
+.btn-back { position: absolute; left: 40px; top: 40px; font-size: 16px; color: var(--gold); font-weight: bold; }
+
+.ranking-table { width: 85%; margin: 0 auto 50px auto; border-collapse: collapse; background: var(--panel-bg); border-radius: 10px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+.ranking-table th, .ranking-table td { padding: 18px; text-align: center; border-bottom: 1px solid #333; }
+.ranking-table th { background: #111; color: var(--gold); text-transform: uppercase; font-family: 'Cinzel', serif;}
+.ranking-table tr:hover { background: #222; }
+
+.pos-cell { font-size: 1.2rem; font-weight: bold; }
+.medal { font-size: 2rem; }
+.medal.gold { text-shadow: 0 0 10px gold; }
+.balance-cell { color: #28a745; font-weight: bold; font-size: 1.1rem; }
+.score-cell { color: var(--gold); font-weight: bold; font-size: 1.2rem; }
