@@ -1,3 +1,6 @@
 <?php
-// LOGOUT - Cierre de sesión
-// Subir código aquí
+session_start();
+session_destroy();
+header('Location: login.php');
+exit;
+?>
