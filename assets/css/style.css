@@ -1,2 +1,80 @@
-/* STYLE - Estilos globales (tema casino oscuro) */
-/* Subir código aquí */
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Roboto:wght@300;400;700&display=swap');
+
+:root {
+    --bg-dark: #0a0a0a;
+    --gold: #d4af37;
+    --gold-glow: rgba(212, 175, 55, 0.4);
+    --panel-bg: #1a1a1a;
+    --nav-bg: #111;
+    --green-felt: #1a472a;
+    --text-main: #f0f0f0;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Roboto', sans-serif;
+    background-color: var(--bg-dark);
+    color: var(--text-main);
+}
+
+h1, h2, h3, .logo {
+    font-family: 'Cinzel', serif;
+    color: var(--gold);
+}
+
+a { color: var(--text-main); text-decoration: none; transition: 0.3s; }
+a:hover { color: var(--gold); }
+
+/* Botones genéricos */
+.btn {
+    background: var(--gold);
+    color: #000;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.3s;
+    text-transform: uppercase;
+    text-decoration: none;
+    display: inline-block;
+}
+.btn:hover {
+    background: #fff;
+    box-shadow: 0 0 15px var(--gold-glow);
+}
+
+/* Modales / Cards */
+.card-panel {
+    background: var(--panel-bg);
+    padding: 20px;
+    border-radius: 10px;
+    border: 1px solid #333;
+    border-top: 4px solid var(--gold);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+}
+
+/* Base de Cartas Mágicas (SVG/CSS) */
+.playing-card {
+    width: 60px; height: 85px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #999;
+    color: black;
+    font-weight: bold;
+    font-size: 18px;
+    line-height: 85px;
+    text-align: center;
+    display: inline-block;
+    margin: 0 3px;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
+}
+.playing-card.red { color: #d00; }
+.playing-card.back {
+    background: repeating-linear-gradient(45deg, #001f3f, #001f3f 10px, #004080 10px, #004080 20px);
+    border: 2px solid #fff;
+    color: transparent;
+}
