@@ -4,42 +4,38 @@ if (!isLoggedIn()) { header('Location: login.php'); exit; }
 
 $user_id = $_SESSION['user_id'];
 
-// Datos del usuario
 $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
 $stmt->execute([$user_id]);
 $u = $stmt->fetch(PDO::FETCH_ASSOC);
 
-// Stats Blackjack
 $stmt = $pdo->prepare('SELECT * FROM blackjack_stats WHERE user_id = ?');
 $stmt->execute([$user_id]);
 $bj = $stmt->fetch(PDO::FETCH_ASSOC);
 
-// Stats Poker
 $stmt = $pdo->prepare('SELECT * FROM poker_stats WHERE user_id = ?');
 $stmt->execute([$user_id]);
 $pk = $stmt->fetch(PDO::FETCH_ASSOC);
 
-// Últimas 20 manos BJ para gráfica
+$stmt = $pdo->prepare('SELECT * FROM bingo_stats WHERE user_id = ?');
+$stmt->execute([$user_id]);
+$bg = $stmt->fetch(PDO::FETCH_ASSOC);
+
 $stmt = $pdo->prepare('SELECT result FROM blackjack_hand_log WHERE user_id = ? ORDER BY played_at DESC LIMIT 20');
 $stmt->execute([$user_id]);
 $bj_history = array_reverse($stmt->fetchAll(PDO::FETCH_COLUMN));
 
-// Últimas 10 manos BJ para historial
 $stmt = $pdo->prepare('SELECT * FROM blackjack_hand_log WHERE user_id = ? ORDER BY played_at DESC LIMIT 10');
 $stmt->execute([$user_id]);
 $bj_log = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Últimas 10 manos Poker para historial
 $stmt = $pdo->prepare('SELECT * FROM poker_hand_log WHERE user_id = ? ORDER BY played_at DESC LIMIT 10');
 $stmt->execute([$user_id]);
 $pk_log = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Evolución saldo (transacciones ASC)
 $stmt = $pdo->prepare('SELECT type, amount, created_at FROM transactions WHERE user_id = ? ORDER BY created_at ASC LIMIT 30');
 $stmt->execute([$user_id]);
 $transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// ─── CALCULAR STATS BJ ────────────────────────────────────────────────────
 $bj_hands   = (int)($bj['hands_played']   ?? 0);
 $bj_won     = (int)($bj['hands_won']      ?? 0);
 $bj_lost    = (int)($bj['hands_lost']     ?? 0);
@@ -51,7 +47,6 @@ $bj_net     = round(($bj['total_won'] ?? 0) - ($bj['total_wagered'] ?? 0), 2);
 $bj_streak  = (int)($bj['best_win_streak'] ?? 0);
 $bj_biggest = (float)($bj['biggest_win']   ?? 0);
 
-// ─── CALCULAR STATS POKER ─────────────────────────────────────────────────
 $pk_hands     = (int)($pk['hands_played'] ?? 0);
 $pk_won_count = (int)($pk['hands_won']    ?? 0);
 $pk_winrate   = $pk_hands > 0 ? round(($pk_won_count / $pk_hands) * 100, 1) : 0;
@@ -65,7 +60,11 @@ $pk_dist      = [
     'Folds'            => (int)($pk['times_folded']       ?? 0),
 ];
 
-// ─── EVOLUCIÓN SALDO ─────────────────────────────────────────────────────
+$bg_played = (int)($bg['games_played'] ?? 0);
+$bg_won = (int)($bg['games_won'] ?? 0);
+$bg_cards = (int)($bg['cards_bought'] ?? 0);
+$bg_net = round(($bg['total_won'] ?? 0) - ($bg['total_wagered'] ?? 0), 2);
+
 $balance_labels = [];
 $balance_data   = [];
 $running = 1000.00;
@@ -89,24 +88,17 @@ if (empty($balance_data)) {
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: #0a0a0a; color: #f0f0f0; font-family: 'Roboto', sans-serif; padding: 20px; }
-        .page-header { display: flex; justify-content: space-between; align-items: center;
-                       border-bottom: 2px solid #d4af37; padding-bottom: 15px; margin-bottom: 25px; }
+        .page-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #d4af37; padding-bottom: 15px; margin-bottom: 25px; }
         .page-header h1 { font-family: 'Cinzel', serif; color: #d4af37; font-size: 22px; }
-        .back-btn { color: #d4af37; text-decoration: none; font-weight: bold;
-                    border: 1px solid #d4af37; padding: 8px 15px; border-radius: 5px; transition: 0.3s; }
+        .back-btn { color: #d4af37; text-decoration: none; font-weight: bold; border: 1px solid #d4af37; padding: 8px 15px; border-radius: 5px; transition: 0.3s; }
         .back-btn:hover { background: #d4af37; color: #000; }
-        .user-info { display: flex; align-items: center; gap: 20px; background: #1a1a1a;
-                     border: 1px solid #333; border-top: 4px solid #d4af37;
-                     border-radius: 10px; padding: 20px; margin-bottom: 25px; }
+        .user-info { display: flex; align-items: center; gap: 20px; background: #1a1a1a; border: 1px solid #333; border-top: 4px solid #d4af37; border-radius: 10px; padding: 20px; margin-bottom: 25px; }
         .avatar-big { font-size: 60px; }
         .balance-big { font-size: 26px; color: #28a745; font-weight: bold; }
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px; }
-        .card { background: #1a1a1a; border: 1px solid #333; border-top: 4px solid #d4af37;
-                border-radius: 10px; padding: 20px; }
-        .card h2 { font-family: 'Cinzel', serif; color: #d4af37; font-size: 15px;
-                   margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }
-        .stat-row { display: flex; justify-content: space-between; padding: 7px 0;
-                    border-bottom: 1px solid #1f1f1f; font-size: 14px; }
+        .card { background: #1a1a1a; border: 1px solid #333; border-top: 4px solid #d4af37; border-radius: 10px; padding: 20px; }
+        .card h2 { font-family: 'Cinzel', serif; color: #d4af37; font-size: 15px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        .stat-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #1f1f1f; font-size: 14px; }
         .stat-val { color: #d4af37; font-weight: bold; }
         .stat-val.green { color: #28a745; }
         .stat-val.red   { color: #dc3545; }
@@ -117,8 +109,7 @@ if (empty($balance_data)) {
         .rl { color: #dc3545; font-weight: bold; }
         .rp { color: #ffc107; font-weight: bold; }
         .chart-wrap { position: relative; height: 180px; margin-top: 15px; }
-        .full-card { background: #1a1a1a; border: 1px solid #333; border-top: 4px solid #d4af37;
-                     border-radius: 10px; padding: 20px; margin-bottom: 25px; }
+        .full-card { background: #1a1a1a; border: 1px solid #333; border-top: 4px solid #d4af37; border-radius: 10px; padding: 20px; margin-bottom: 25px; }
         .full-card h2 { font-family: 'Cinzel', serif; color: #d4af37; font-size: 15px; margin-bottom: 15px; }
         .empty-msg { color: #666; text-align: center; margin-top: 20px; font-style: italic; }
         @media(max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
@@ -131,7 +122,6 @@ if (empty($balance_data)) {
     <a href="index.php" class="back-btn">← Volver al Lobby</a>
 </div>
 
-<!-- USUARIO -->
 <div class="user-info">
     <div class="avatar-big"><?= htmlspecialchars($u['avatar'] ?? '🎲') ?></div>
     <div>
@@ -145,7 +135,17 @@ if (empty($balance_data)) {
     </div>
 </div>
 
-<!-- STATS BJ + HISTORIAL BJ -->
+<div class="user-info" style="display:flex; justify-content:space-between; align-items:center; padding: 15px 20px;">
+    <div>
+        <h3 style="color:#d4af37; margin-bottom:5px;">⚙️ Ajustes Rápidos</h3>
+        <p style="font-size:12px; color:#aaa;">Configura tu apuesta personalizada (Botón ★ en las mesas)</p>
+    </div>
+    <div style="display:flex; gap:10px;">
+        <input type="number" id="custom-bet-input" placeholder="Ej: 150" style="width:100px; padding:8px; border-radius:5px; border:1px solid #444; background:#222; color:#fff;">
+        <button onclick="saveCustomBet()" style="background:#d4af37; color:#000; font-weight:bold; border:none; padding:8px 15px; border-radius:5px; cursor:pointer;">Guardar</button>
+    </div>
+</div>
+
 <div class="grid-2">
     <div class="card">
         <h2>&#9824; Estadísticas Blackjack</h2>
@@ -188,7 +188,6 @@ if (empty($balance_data)) {
     </div>
 </div>
 
-<!-- STATS POKER + HISTORIAL POKER -->
 <div class="grid-2">
     <div class="card">
         <h2>🃏 Estadísticas Póker</h2>
@@ -230,14 +229,41 @@ if (empty($balance_data)) {
     </div>
 </div>
 
-<!-- EVOLUCIÓN SALDO -->
+<div class="grid-2">
+    <div class="card" style="border-top-color: #9c27b0;">
+        <h2 style="color: #9c27b0;">🎱 Estadísticas Bingo</h2>
+        <div class="stat-row"><span>Partidas Jugadas</span><span class="stat-val"><?= $bg_played ?></span></div>
+        <div class="stat-row"><span>Partidas Ganadas</span><span class="stat-val"><?= $bg_won ?></span></div>
+        <div class="stat-row"><span>Cartones Comprados</span><span class="stat-val"><?= $bg_cards ?></span></div>
+        <div class="stat-row">
+            <span>Ganancia Neta Bingo</span>
+            <span class="stat-val <?= $bg_net >= 0 ? 'green' : 'red' ?>">
+                <?= $bg_net >= 0 ? '+' : '' ?>&euro; <?= number_format(abs($bg_net), 2, ',', '.') ?>
+            </span>
+        </div>
+    </div>
+</div>
+
 <div class="full-card">
     <h2>&#128200; Evolución del Saldo</h2>
     <div style="height:220px;"><canvas id="balanceChart"></canvas></div>
 </div>
 
 <script>
-// Gráfico barras BJ
+    document.addEventListener("DOMContentLoaded", () => {
+        document.getElementById('custom-bet-input').value = localStorage.getItem('bj_custom_bet') || 150;
+    });
+
+    function saveCustomBet() {
+        const val = document.getElementById('custom-bet-input').value;
+        if(val >= 10) {
+            localStorage.setItem('bj_custom_bet', val);
+            alert("¡Apuesta personalizada guardada correctamente!");
+        } else {
+            alert("La apuesta mínima es de 10€");
+        }
+    }
+
 const bjR = <?= json_encode($bj_history) ?>;
 new Chart(document.getElementById('bjChart'), {
     type: 'bar',
@@ -249,16 +275,9 @@ new Chart(document.getElementById('bjChart'), {
             borderRadius: 3
         }]
     },
-    options: {
-        plugins: { legend: { display: false } },
-        scales: {
-            x: { ticks: { color: '#aaa' }, grid: { color: '#222' } },
-            y: { display: false }
-        }
-    }
+    options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#aaa' }, grid: { color: '#222' } }, y: { display: false } } }
 });
 
-// Gráfico dona Poker
 new Chart(document.getElementById('pkDonut'), {
     type: 'doughnut',
     data: {
@@ -272,16 +291,13 @@ new Chart(document.getElementById('pkDonut'), {
     options: { plugins: { legend: { position: 'bottom', labels: { color: '#f0f0f0', font: { size: 11 } } } } }
 });
 
-// Gráfico línea saldo
 new Chart(document.getElementById('balanceChart'), {
     type: 'line',
     data: {
         labels: <?= json_encode($balance_labels) ?>,
         datasets: [{
-            label: 'Saldo (€)',
-            data: <?= json_encode($balance_data) ?>,
-            borderColor: '#d4af37',
-            backgroundColor: 'rgba(212,175,55,0.1)',
+            label: 'Saldo (€)', data: <?= json_encode($balance_data) ?>,
+            borderColor: '#d4af37', backgroundColor: 'rgba(212,175,55,0.1)',
             borderWidth: 2, pointRadius: 3, fill: true, tension: 0.3
         }]
     },
