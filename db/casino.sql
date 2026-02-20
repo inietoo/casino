@@ -3,6 +3,9 @@ SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
 SET time_zone = "+00:00";
 
+-- Borramos las tablas si existen para poder reimportar sin errores
+DROP TABLE IF EXISTS `ranking_snapshot`, `poker_hand_log`, `poker_stats`, `blackjack_hand_log`, `blackjack_stats`, `transactions`, `chat_messages`, `game_state`, `room_players`, `rooms`, `users`;
+
 CREATE TABLE `users` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
   `username` VARCHAR(50) UNIQUE NOT NULL,
@@ -10,7 +13,7 @@ CREATE TABLE `users` (
   `balance` DECIMAL(10,2) DEFAULT 1000.00,
   `avatar` VARCHAR(10) DEFAULT '🎲',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `rooms` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
@@ -21,7 +24,7 @@ CREATE TABLE `rooms` (
   `max_bet` DECIMAL(10,2) DEFAULT 500.00,
   `status` ENUM('waiting','playing','finished') DEFAULT 'waiting',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `room_players` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
@@ -30,9 +33,9 @@ CREATE TABLE `room_players` (
   `seat` INT,
   `status` ENUM('active','folded','bust','spectator'),
   `joined_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (`room_id`) REFERENCES rooms(`id`),
-  FOREIGN KEY (`user_id`) REFERENCES users(`id`)
-);
+  FOREIGN KEY (`room_id`) REFERENCES rooms(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `game_state` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
@@ -41,16 +44,18 @@ CREATE TABLE `game_state` (
   `current_turn` INT NULL,
   `phase` VARCHAR(50),
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (`room_id`) REFERENCES rooms(`id`)
-);
+  FOREIGN KEY (`room_id`) REFERENCES rooms(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `chat_messages` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
   `room_id` INT,
   `user_id` INT,
   `message` TEXT,
-  `sent_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+  `sent_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`room_id`) REFERENCES rooms(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `transactions` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
@@ -58,8 +63,9 @@ CREATE TABLE `transactions` (
   `room_id` INT,
   `type` ENUM('bet','win','refund','reload'),
   `amount` DECIMAL(10,2),
-  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `blackjack_stats` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
@@ -78,8 +84,9 @@ CREATE TABLE `blackjack_stats` (
   `biggest_loss` DECIMAL(10,2) DEFAULT 0.00,
   `current_win_streak` INT DEFAULT 0,
   `best_win_streak` INT DEFAULT 0,
-  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `blackjack_hand_log` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
@@ -93,8 +100,9 @@ CREATE TABLE `blackjack_hand_log` (
   `result` ENUM('win','loss','push','blackjack','bust'),
   `amount_bet` DECIMAL(10,2),
   `amount_won` DECIMAL(10,2),
-  `played_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+  `played_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `poker_stats` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
@@ -123,8 +131,9 @@ CREATE TABLE `poker_stats` (
   `two_pairs` INT DEFAULT 0,
   `pairs` INT DEFAULT 0,
   `high_cards` INT DEFAULT 0,
-  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `poker_hand_log` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
@@ -138,15 +147,17 @@ CREATE TABLE `poker_hand_log` (
   `result` ENUM('win','loss','fold'),
   `pot_size` DECIMAL(10,2),
   `amount_won` DECIMAL(10,2),
-  `played_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+  `played_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `ranking_snapshot` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
   `user_id` INT,
   `rank_position` INT,
   `score` DECIMAL(12,2),
-  `snapshot_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+  `snapshot_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 COMMIT;
