@@ -21,11 +21,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($user && password_verify($password, $user['password'])) {
-            $_SESSION['user_id'] = $user['id'];
+            // Regenerar ID de sesión para prevenir session fixation
+            session_regenerate_id(true);
+
+            $_SESSION['user_id']  = $user['id'];
             $_SESSION['username'] = $user['username'];
             header('Location: index.php');
             exit;
         } else {
+            // Mensaje genérico para no revelar si existe el usuario
             $error = 'Usuario o contraseña incorrectos.';
         }
     }
@@ -69,13 +73,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="error"><?= htmlspecialchars($error) ?></div>
         <?php endif; ?>
 
-        <form method="POST">
+        <form method="POST" autocomplete="off">
             <label for="username">Usuario</label>
             <input type="text" id="username" name="username" placeholder="Tu nombre de usuario"
-                   value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" required>
+                   value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" required autocomplete="username">
 
             <label for="password">Contraseña</label>
-            <input type="password" id="password" name="password" placeholder="Tu contraseña" required>
+            <input type="password" id="password" name="password" placeholder="Tu contraseña"
+                   required autocomplete="current-password">
 
             <button type="submit" class="btn">Entrar al Casino</button>
         </form>
