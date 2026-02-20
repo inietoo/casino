@@ -414,6 +414,5 @@ if (!$room || $room['game_type'] !== 'poker') { header('Location: index.php'); e
         setInterval(updatePoker, 1500);
         setInterval(updateChat, 2000);
     </script>
-    <script src="/casino/assets/js/notifications.js"></script>
 </body>
 </html>
