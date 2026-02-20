@@ -165,7 +165,7 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
             <div class="dealer-total" id="dealer-total"></div>
         </div>
 
-        <div id="waiting-msg" class="waiting-msg">Esperando a que se unan más jugadores...</div>
+        <div id="waiting-msg" class="waiting-msg">Esperando a que se unan jugadores o el lider inicie...</div>
         <div class="players-area" id="players-zone"></div>
 
         <div class="result-overlay" id="result-overlay">
@@ -219,7 +219,7 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
                     </div>`;
         }
 
-        // NUEVO: Calculadora inteligente para manos suaves y duras (As = 1 u 11)
+        // Calculadora inteligente para manos suaves y duras (As = 1 u 11)
         function getHandValues(cards) {
             if (!cards || cards.length === 0) return { total: 0, isSoft: false, softTotal: 0 };
             let total = 0, aces = 0;
@@ -265,7 +265,6 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
                 dealerCards.forEach(c => dealerHtml += renderCard(c));
                 updateHTML('dealer-cards', dealerHtml);
 
-                // NUEVO: Mostrar valor del dealer correctamente (Suave / Duro)
                 if (phase === 'finished' || phase === 'dealer_turn') {
                     const realCards = state.dealer_cards || [];
                     const dv = getHandValues(realCards);
@@ -276,7 +275,7 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
                 }
 
                 const waitingMsg = document.getElementById('waiting-msg');
-                const showWaiting = (playerCount < 2 && phase === 'waiting');
+                const showWaiting = (playerCount < 1 && phase === 'waiting'); // CAMBIO: AHORA TE DEJA JUGAR A TI SOLO
                 if (waitingMsg.style.display !== (showWaiting ? 'block' : 'none')) {
                     waitingMsg.style.display = showWaiting ? 'block' : 'none';
                 }
@@ -294,7 +293,6 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
                         p.cards.forEach(c => cardsHtml += renderCard(c));
                     }
 
-                    // NUEVO: Renderizado visual de Puntuación con As (Ejemplo: "7 / 17")
                     const hvObj = p.cards && p.cards.length ? getHandValues(p.cards) : {total:0};
                     const hvText = hvObj.total > 0 
                         ? `<div class="hand-value">Total: ${hvObj.isSoft && p.status === 'playing' ? hvObj.softTotal + ' / ' + hvObj.total : hvObj.total}</div>` 
@@ -316,6 +314,7 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
                             ${turnArrow}
                             <div class="player-name">${p.avatar || '🎲'} ${p.username || 'Jugador'}${meLabel}</div>
                             <div class="player-bet">Apuesta: €${bet}</div>
+                            <div class="player-balance" style="color:#28a745; font-size:12px; margin-bottom:4px; font-weight:bold;">Saldo: €${parseFloat(p.balance || 0).toFixed(2)}</div>
                             <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:3px;margin:6px 0;">${cardsHtml}</div>
                             ${hvText}
                             <div class="player-status ${statusClass}">${statusMap[p.status] || p.status || ''}</div>
@@ -345,9 +344,11 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
             let html = '';
 
             if (phase === 'waiting') {
-                if (iAmCreator && playerCount >= 2) html += `<button class="btn-game btn-start" onclick="sendAction('start')">🎮 Iniciar Partida</button>`;
-                else if (iAmCreator) html += `<button class="btn-game" disabled>Esperando jugadores (${playerCount}/2)...</button>`;
-                else html += `<button class="btn-game" disabled>Esperando que el líder inicie...</button>`;
+                if (iAmCreator && playerCount >= 1) { // CAMBIO: AHORA DEJA INICIAR CON 1 JUGADOR
+                    html += `<button class="btn-game btn-start" onclick="sendAction('start')">🎮 Iniciar Partida</button>`;
+                } else {
+                    html += `<button class="btn-game" disabled>Esperando que el líder inicie...</button>`;
+                }
             } else if (phase === 'betting') {
                 if (myPlayer && myPlayer.status === 'betting') {
                     html += `<input type="number" id="bet-amount" value="50" min="10" max="500" placeholder="€">`;
@@ -437,5 +438,6 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
 
         setInterval(updateTable, 1500); setInterval(updateChat, 2000);
     </script>
+    <script src="/casino/assets/js/notifications.js"></script>
 </body>
 </html>
