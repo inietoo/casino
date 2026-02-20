@@ -4,7 +4,7 @@ START TRANSACTION;
 SET time_zone = "+00:00";
 
 -- Borramos las tablas si existen para poder reimportar sin errores
-DROP TABLE IF EXISTS `ranking_snapshot`, `poker_hand_log`, `poker_stats`, `blackjack_hand_log`, `blackjack_stats`, `transactions`, `chat_messages`, `game_state`, `room_players`, `rooms`, `users`;
+DROP TABLE IF EXISTS `notifications`, `ranking_snapshot`, `poker_hand_log`, `poker_stats`, `blackjack_hand_log`, `blackjack_stats`, `transactions`, `chat_messages`, `game_state`, `room_players`, `rooms`, `users`;
 
 CREATE TABLE `users` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
@@ -13,6 +13,15 @@ CREATE TABLE `users` (
   `balance` DECIMAL(10,2) DEFAULT 1000.00,
   `avatar` VARCHAR(10) DEFAULT '🎲',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `notifications` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `user_id` INT NOT NULL,
+    `message` VARCHAR(255) NOT NULL,
+    `is_read` TINYINT(1) DEFAULT 0,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `rooms` (
@@ -88,75 +97,16 @@ CREATE TABLE `blackjack_stats` (
   FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `blackjack_hand_log` (
-  `id` INT PRIMARY KEY AUTO_INCREMENT,
-  `user_id` INT,
-  `room_id` INT,
-  `player_cards` VARCHAR(100),
-  `dealer_cards` VARCHAR(100),
-  `player_final_value` INT,
-  `dealer_final_value` INT,
-  `actions_taken` VARCHAR(200),
-  `result` ENUM('win','loss','push','blackjack','bust'),
-  `amount_bet` DECIMAL(10,2),
-  `amount_won` DECIMAL(10,2),
-  `played_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE `poker_stats` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
   `user_id` INT UNIQUE,
   `hands_played` INT DEFAULT 0,
   `hands_won` INT DEFAULT 0,
-  `hands_won_showdown` INT DEFAULT 0,
-  `hands_won_fold` INT DEFAULT 0,
-  `times_folded` INT DEFAULT 0,
-  `times_allin` INT DEFAULT 0,
-  `flops_seen` INT DEFAULT 0,
-  `vpip` DECIMAL(5,2) DEFAULT 0.00,
   `total_wagered` DECIMAL(12,2) DEFAULT 0.00,
   `total_won` DECIMAL(12,2) DEFAULT 0.00,
-  `biggest_pot_won` DECIMAL(10,2) DEFAULT 0.00,
-  `biggest_loss` DECIMAL(10,2) DEFAULT 0.00,
   `current_win_streak` INT DEFAULT 0,
   `best_win_streak` INT DEFAULT 0,
-  `royal_flushes` INT DEFAULT 0,
-  `straight_flushes` INT DEFAULT 0,
-  `four_of_a_kinds` INT DEFAULT 0,
-  `full_houses` INT DEFAULT 0,
-  `flushes` INT DEFAULT 0,
-  `straights` INT DEFAULT 0,
-  `three_of_a_kinds` INT DEFAULT 0,
-  `two_pairs` INT DEFAULT 0,
-  `pairs` INT DEFAULT 0,
-  `high_cards` INT DEFAULT 0,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `poker_hand_log` (
-  `id` INT PRIMARY KEY AUTO_INCREMENT,
-  `user_id` INT,
-  `room_id` INT,
-  `hole_cards` VARCHAR(20),
-  `community_cards` VARCHAR(50),
-  `best_hand_cards` VARCHAR(50),
-  `hand_rank` ENUM('royal_flush','straight_flush','four_of_a_kind','full_house','flush','straight','three_of_a_kind','two_pair','pair','high_card'),
-  `actions_taken` VARCHAR(300),
-  `result` ENUM('win','loss','fold'),
-  `pot_size` DECIMAL(10,2),
-  `amount_won` DECIMAL(10,2),
-  `played_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE `ranking_snapshot` (
-  `id` INT PRIMARY KEY AUTO_INCREMENT,
-  `user_id` INT,
-  `rank_position` INT,
-  `score` DECIMAL(12,2),
-  `snapshot_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
