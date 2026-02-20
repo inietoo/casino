@@ -49,14 +49,22 @@ function getActivePlayers(array $state): array {
 
 function nextActivePlayer(array $state): ?string {
     $playerIds = array_keys($state['players']);
-    $active    = array_filter($playerIds, fn($uid) => $state['players'][$uid]['status'] === 'active');
-    $active    = array_values($active);
-    if (empty($active)) return null;
+    if (empty($playerIds)) return null;
 
     $current = $state['current_turn'];
-    $idx     = array_search($current, $active);
-    if ($idx === false) return $active[0];
-    return $active[($idx + 1) % count($active)];
+    $idx = array_search($current, $playerIds);
+    if ($idx === false) $idx = -1; // Si por algo no está, empezamos desde el inicio
+
+    $count = count($playerIds);
+    // Revisar de forma circular (wrap-around)
+    for ($i = 1; $i <= $count; $i++) {
+        $nextIdx = ($idx + $i) % $count;
+        $uid = $playerIds[$nextIdx];
+        if ($state['players'][$uid]['status'] === 'active') {
+            return (string)$uid;
+        }
+    }
+    return null;
 }
 
 function checkBettingComplete(array $state): bool {
@@ -104,7 +112,7 @@ function advancePhase(PDO $pdo, int $room_id, array &$state): void {
 
     // Set first active player after dealer as first to act
     $active = array_keys(array_filter($state['players'], fn($p) => $p['status'] === 'active'));
-    $state['current_turn'] = $active[0] ?? null;
+    $state['current_turn'] = isset($active[0]) ? (string)$active[0] : null;
 }
 
 function settlePokerHands(PDO $pdo, int $room_id, array &$state): void {
@@ -246,7 +254,7 @@ if ($action === 'state') {
     $state['my_user_id']   = $user_id;
 
     // Check creator
-    $stmt2 = $pdo->prepare("SELECT user_id FROM room_players WHERE room_id = ? AND seat = 1 LIMIT 1");
+    $stmt2 = $pdo->prepare("SELECT user_id FROM room_players WHERE room_id = ? ORDER BY seat ASC LIMIT 1");
     $stmt2->execute([$room_id]);
     $state['is_creator'] = ($stmt2->fetchColumn() == $user_id);
 
@@ -271,32 +279,37 @@ if ($action === 'join') {
     try {
         $stmt = $pdo->prepare("SELECT id FROM room_players WHERE room_id = ? AND user_id = ?");
         $stmt->execute([$room_id, $user_id]);
+        
         if (!$stmt->fetch()) {
             $stmt2 = $pdo->prepare("SELECT MAX(seat) FROM room_players WHERE room_id = ?");
             $stmt2->execute([$room_id]);
             $maxSeat = (int)$stmt2->fetchColumn();
             $newSeat = $maxSeat + 1;
+            
             if ($newSeat > 6) { echo json_encode(['error' => 'Sala llena']); exit; }
 
             $pdo->prepare("INSERT INTO room_players (room_id, user_id, seat, status) VALUES (?, ?, ?, 'active')")
                 ->execute([$room_id, $user_id, $newSeat]);
-
-            $state = getState($pdo, $room_id);
-            $info  = getUserInfo($pdo, $user_id);
-            if (!isset($state['players'][(string)$user_id])) {
-                $state['players'][(string)$user_id] = [
-                    'username'    => $info['username'],
-                    'avatar'      => $info['avatar'],
-                    'hole_cards'  => [],
-                    'current_bet' => 0,
-                    'total_bet'   => 0,
-                    'status'      => 'waiting',
-                    'balance'     => (float)$info['balance'],
-                    'has_acted'   => false,
-                ];
-                saveState($pdo, $room_id, $state);
-            }
         }
+
+        // Add to state
+        $state = getState($pdo, $room_id);
+        $info  = getUserInfo($pdo, $user_id);
+        
+        if (!isset($state['players'][(string)$user_id])) {
+            $state['players'][(string)$user_id] = [
+                'username'    => $info['username'],
+                'avatar'      => $info['avatar'],
+                'hole_cards'  => [],
+                'current_bet' => 0,
+                'total_bet'   => 0,
+                'status'      => 'waiting',
+                'balance'     => (float)$info['balance'],
+                'has_acted'   => false,
+            ];
+            saveState($pdo, $room_id, $state);
+        }
+        
         echo json_encode(['success' => true]);
     } catch (PDOException $e) {
         error_log('Poker join: ' . $e->getMessage());
@@ -309,10 +322,10 @@ if ($action === 'join') {
 if ($action === 'start') {
     $state = getState($pdo, $room_id);
 
-    $stmt = $pdo->prepare("SELECT user_id FROM room_players WHERE room_id = ? AND seat = 1");
+    $stmt = $pdo->prepare("SELECT user_id FROM room_players WHERE room_id = ? ORDER BY seat ASC LIMIT 1");
     $stmt->execute([$room_id]);
     if ($stmt->fetchColumn() != $user_id) {
-        echo json_encode(['error' => 'Solo el creador puede iniciar']); exit;
+        echo json_encode(['error' => 'Solo el líder de la mesa puede iniciar']); exit;
     }
     if (count($state['players'] ?? []) < 2) {
         echo json_encode(['error' => 'Se necesitan al menos 2 jugadores']); exit;
@@ -355,7 +368,7 @@ if ($action === 'start') {
     $state['pot']           = $sbAmount + $bbAmount;
     $state['current_bet']   = $bbAmount;
     $state['phase']         = 'preflop';
-    $state['current_turn']  = $playerIds[count($playerIds) > 2 ? 2 : 0];
+    $state['current_turn']  = (string)$playerIds[count($playerIds) > 2 ? 2 : 0];
     $state['dealer_seat']   = 0;
 
     saveState($pdo, $room_id, $state);
@@ -370,7 +383,7 @@ if ($action === 'fold') {
     $state = getState($pdo, $room_id);
     $uid   = (string)$user_id;
 
-    if ($state['current_turn'] !== $uid) { echo json_encode(['error' => 'No es tu turno']); exit; }
+    if ((string)$state['current_turn'] !== (string)$user_id) { echo json_encode(['error' => 'No es tu turno']); exit; }
 
     $state['players'][$uid]['status']    = 'folded';
     $state['players'][$uid]['has_acted'] = true;
@@ -395,7 +408,7 @@ if ($action === 'check_call') {
     $state = getState($pdo, $room_id);
     $uid   = (string)$user_id;
 
-    if ($state['current_turn'] !== $uid) { echo json_encode(['error' => 'No es tu turno']); exit; }
+    if ((string)$state['current_turn'] !== (string)$user_id) { echo json_encode(['error' => 'No es tu turno']); exit; }
 
     $maxBet   = $state['current_bet'] ?? 0;
     $myBet    = $state['players'][$uid]['current_bet'] ?? 0;
@@ -437,7 +450,7 @@ if ($action === 'raise') {
     $uid    = (string)$user_id;
     $amount = (float)($_POST['amount'] ?? 0);
 
-    if ($state['current_turn'] !== $uid) { echo json_encode(['error' => 'No es tu turno']); exit; }
+    if ((string)$state['current_turn'] !== (string)$user_id) { echo json_encode(['error' => 'No es tu turno']); exit; }
     if ($amount <= ($state['current_bet'] ?? 0)) { echo json_encode(['error' => 'La subida debe ser mayor que la apuesta actual']); exit; }
 
     $stmt = $pdo->prepare("SELECT balance FROM users WHERE id = ?");
@@ -479,10 +492,10 @@ if ($action === 'raise') {
 if ($action === 'new_hand') {
     $state = getState($pdo, $room_id);
 
-    $stmt = $pdo->prepare("SELECT user_id FROM room_players WHERE room_id = ? AND seat = 1");
+    $stmt = $pdo->prepare("SELECT user_id FROM room_players WHERE room_id = ? ORDER BY seat ASC LIMIT 1");
     $stmt->execute([$room_id]);
     if ($stmt->fetchColumn() != $user_id) {
-        echo json_encode(['error' => 'Solo el creador puede iniciar nueva mano']); exit;
+        echo json_encode(['error' => 'Solo el líder de la mesa puede iniciar nueva mano']); exit;
     }
 
     // Rebuild players from DB
