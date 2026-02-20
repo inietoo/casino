@@ -12,15 +12,33 @@ $user_id = $_SESSION['user_id'];
 
 // ─── 1. LISTAR SALAS ───────────────────────────────────────────────────────
 if ($action === 'list') {
-    $query = "
-        SELECT r.*,
-        (SELECT COUNT(*) FROM room_players WHERE room_id = r.id AND status != 'spectator') as players
-        FROM rooms r
-        WHERE r.status != 'finished'
-        ORDER BY r.created_at DESC
-    ";
+    $type = $_GET['type'] ?? '';
+
+    if ($type) {
+        $query = "
+            SELECT r.*,
+            (SELECT COUNT(*) FROM room_players WHERE room_id = r.id AND status != 'spectator') as players
+            FROM rooms r
+            WHERE r.status != 'finished' AND r.game_type = :type
+            ORDER BY r.created_at DESC
+        ";
+    } else {
+        $query = "
+            SELECT r.*,
+            (SELECT COUNT(*) FROM room_players WHERE room_id = r.id AND status != 'spectator') as players
+            FROM rooms r
+            WHERE r.status != 'finished'
+            ORDER BY r.created_at DESC
+        ";
+    }
+
     try {
-        $stmt  = $pdo->query($query);
+        $stmt = $pdo->prepare($query);
+        if ($type) {
+            $stmt->execute(['type' => $type]);
+        } else {
+            $stmt->execute();
+        }
         $rooms = $stmt->fetchAll(PDO::FETCH_ASSOC);
         echo json_encode($rooms ?: []);
     } catch (PDOException $e) {
@@ -32,7 +50,8 @@ if ($action === 'list') {
 
 // ─── 2. CREAR NUEVA SALA ───────────────────────────────────────────────────
 elseif ($action === 'create') {
-    $type     = ($_GET['type'] ?? '') === 'poker' ? 'poker' : 'blackjack';
+    $reqType  = $_POST['type'] ?? $_GET['type'] ?? '';
+    $type     = in_array($reqType, ['blackjack', 'poker', 'bingo']) ? $reqType : 'blackjack';
     $username = $_SESSION['username'] ?? 'Jugador';
     $name     = 'Mesa de ' . htmlspecialchars($username);
 
