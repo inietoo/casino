@@ -2,7 +2,6 @@
 require 'config.php';
 if (!isLoggedIn()) { header('Location: login.php'); exit; }
 
-// ✅ FIX: acceder correctamente al parámetro GET
 $room_id  = (int)($_GET['room_id'] ?? 0);
 $user_id  = $_SESSION['user_id'];
 $username = $_SESSION['username'] ?? 'Jugador';
@@ -87,7 +86,7 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
         .s-push      { color: #ff9800; }
         .s-betting   { color: #aaa; }
         .s-waiting   { color: #555; }
-        .hand-value  { font-size: 11px; color: #ccc; margin-top: 2px; }
+        .hand-value  { font-size: 12px; color: #fff; background: rgba(0,0,0,0.5); padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; border: 1px solid rgba(255,255,255,0.2); }
 
         /* ── RESULTADO ── */
         .result-overlay {
@@ -145,9 +144,8 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
 </head>
 <body>
     <div class="game-area">
-        <!-- Header -->
         <div class="header">
-            <a href="index.php">← Lobby</a>
+            <button id="btn-leave" onclick="leaveRoom()" class="btn-game" style="background:#dc3545; color:white; font-size:12px; padding:6px 12px; margin-right: 15px;">← Salir al Lobby</button>
             <div style="font-size:14px;">
                 ♠ <?= htmlspecialchars($room['name']) ?>
                 &nbsp; <span class="players-count-badge" id="player-badge">0 jugadores</span>
@@ -155,38 +153,32 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
             <div id="phase-label" style="font-size:13px; color:#aaa;">Esperando jugadores...</div>
         </div>
 
-        <!-- Room meta -->
         <div class="room-info-bar">
             <div>Min: <span>€<?= number_format($room['min_bet'],2) ?></span></div>
             <div>Max: <span>€<?= number_format($room['max_bet'],2) ?></span></div>
             <div>ID Sala: <span>#<?= $room_id ?></span></div>
         </div>
 
-        <!-- Dealer Zone -->
         <div class="dealer-area">
             <div class="dealer-label">♦ DEALER ♦</div>
             <div class="cards-row" id="dealer-cards"></div>
             <div class="dealer-total" id="dealer-total"></div>
         </div>
 
-        <!-- Players Zone -->
         <div id="waiting-msg" class="waiting-msg">Esperando a que se unan más jugadores...</div>
         <div class="players-area" id="players-zone"></div>
 
-        <!-- Result overlay -->
         <div class="result-overlay" id="result-overlay">
             <h2 id="result-title">¡Fin de Ronda!</h2>
             <div class="result-text" id="result-body"></div>
             <button id="result-btn" onclick="closeResult()">Nueva Ronda</button>
         </div>
 
-        <!-- Controls -->
         <div class="controls-bar" id="controls-bar">
             <div id="action-controls" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center;"></div>
         </div>
     </div>
 
-    <!-- Chat -->
     <div class="chat-area">
         <div class="chat-header">💬 Chat de Mesa</div>
         <div class="chat-messages" id="chat"></div>
@@ -198,33 +190,38 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
     </div>
 
     <script>
-        // ── CONFIG ──────────────────────────────────────────────────────────────
         const roomId      = <?= $room_id ?>;
         const myUserId    = <?= intval($user_id) ?>;
         const isCreator   = <?= json_encode(isset($_SESSION['user_id'])) ?>;
         let   lastPhase   = '';
-        let   polling     = true;
 
-        // ── RENDER CARTA ────────────────────────────────────────────────────────
+        function updateHTML(id, html) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (el.dataset.lastHtml !== html) {
+                el.innerHTML = html;
+                el.dataset.lastHtml = html;
+            }
+        }
+
         function renderCard(cardCode) {
             if (!cardCode || cardCode === 'hidden') {
                 return `<div class="card card-back"></div>`;
             }
-            // ✅ FIX: destructuring correcto
             const parts = cardCode.split('_');
             const rank  = parts[0];
             const suit  = parts[1];
             const suits = { 'S': '♠', 'H': '♥', 'C': '♣', 'D': '♦' };
             const isRed = (suit === 'H' || suit === 'D') ? 'red' : '';
-            // ✅ FIX: acceder al objeto suits con la clave correcta
             return `<div class="card ${isRed}">
                         <div class="card-rank">${rank}</div>
                         <div class="card-suit">${suits[suit] || suit}</div>
                     </div>`;
         }
 
-        function handValue(cards) {
-            if (!cards || cards.length === 0) return 0;
+        // NUEVO: Calculadora inteligente para manos suaves y duras (As = 1 u 11)
+        function getHandValues(cards) {
+            if (!cards || cards.length === 0) return { total: 0, isSoft: false, softTotal: 0 };
             let total = 0, aces = 0;
             for (const c of cards) {
                 if (!c || c === 'hidden') continue;
@@ -233,11 +230,19 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
                 else if (r === 'A') { total += 11; aces++; }
                 else total += parseInt(r);
             }
+            let isSoft = false;
+            let softTotal = total;
+            
             while (total > 21 && aces > 0) { total -= 10; aces--; }
-            return total;
+            
+            // Si el As está contando como 11 y la mano no se pasa de 21, es una mano "suave"
+            if (aces > 0 && total <= 21) {
+                isSoft = true;
+                softTotal = total - 10;
+            }
+            return { total: total, isSoft: isSoft, softTotal: softTotal };
         }
 
-        // ── ACTUALIZAR MESA ──────────────────────────────────────────────────────
         function updateTable() {
             fetch(`api/blackjack_action.php?action=state&room_id=${roomId}`)
             .then(r => r.json())
@@ -249,47 +254,37 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
                 const playerCount  = state.player_count || 0;
                 const iAmCreator   = state.is_creator;
 
-                // Badge
-                document.getElementById('player-badge').textContent = `${playerCount} jugador${playerCount !== 1 ? 'es' : ''}`;
+                updateHTML('player-badge', `${playerCount} jugador${playerCount !== 1 ? 'es' : ''}`);
 
-                // Phase label
-                const phaseLabels = {
-                    waiting: 'Esperando jugadores',
-                    betting: 'Fase de apuestas',
-                    playing: 'En juego',
-                    dealer_turn: 'Turno del dealer',
-                    finished: 'Fin de ronda'
-                };
-                document.getElementById('phase-label').textContent = phaseLabels[phase] || phase.toUpperCase();
+                const phaseLabels = { waiting: 'Esperando jugadores', betting: 'Fase de apuestas', playing: 'En juego', dealer_turn: 'Turno del dealer', finished: 'Fin de ronda' };
+                updateHTML('phase-label', phaseLabels[phase] || phase.toUpperCase());
 
                 // Dealer cards
                 const dealerCards = state.dealer_cards_display || [];
                 let dealerHtml = '';
                 dealerCards.forEach(c => dealerHtml += renderCard(c));
-                document.getElementById('dealer-cards').innerHTML = dealerHtml;
+                updateHTML('dealer-cards', dealerHtml);
 
-                const dealerTotalEl = document.getElementById('dealer-total');
+                // NUEVO: Mostrar valor del dealer correctamente (Suave / Duro)
                 if (phase === 'finished' || phase === 'dealer_turn') {
                     const realCards = state.dealer_cards || [];
-                    const dv = handValue(realCards);
-                    dealerTotalEl.textContent = realCards.length ? `Total dealer: ${dv}` : '';
+                    const dv = getHandValues(realCards);
+                    const dealerText = realCards.length ? `Total dealer: ${dv.isSoft ? dv.softTotal + ' / ' + dv.total : dv.total}` : '';
+                    updateHTML('dealer-total', dealerText);
                 } else {
-                    dealerTotalEl.textContent = '';
+                    updateHTML('dealer-total', '');
                 }
 
-                // Waiting message
                 const waitingMsg = document.getElementById('waiting-msg');
-                if (playerCount < 2 && phase === 'waiting') {
-                    waitingMsg.style.display = 'block';
-                    waitingMsg.textContent = `Esperando jugadores... (${playerCount}/2 mínimo)`;
-                } else {
-                    waitingMsg.style.display = 'none';
+                const showWaiting = (playerCount < 2 && phase === 'waiting');
+                if (waitingMsg.style.display !== (showWaiting ? 'block' : 'none')) {
+                    waitingMsg.style.display = showWaiting ? 'block' : 'none';
                 }
 
                 // Players
                 let playersHtml = '';
                 for (const uid in players) {
-                    const p         = players[uid]; // ✅ FIX: acceder al jugador correcto
+                    const p         = players[uid];
                     const isMe      = (parseInt(uid) === myUserId);
                     const isTurn    = (state.current_turn == uid);
                     const classes   = ['player-spot', isMe ? 'my-spot' : '', isTurn ? 'active-turn' : ''].join(' ');
@@ -299,18 +294,20 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
                         p.cards.forEach(c => cardsHtml += renderCard(c));
                     }
 
-                    const hv       = p.cards && p.cards.length ? handValue(p.cards) : 0;
-                    const hvText   = hv > 0 ? `<div class="hand-value">Total: ${hv}</div>` : '';
+                    // NUEVO: Renderizado visual de Puntuación con As (Ejemplo: "7 / 17")
+                    const hvObj = p.cards && p.cards.length ? getHandValues(p.cards) : {total:0};
+                    const hvText = hvObj.total > 0 
+                        ? `<div class="hand-value">Total: ${hvObj.isSoft && p.status === 'playing' ? hvObj.softTotal + ' / ' + hvObj.total : hvObj.total}</div>` 
+                        : '';
+
                     const statusClass = `s-${p.status || 'waiting'}`;
                     const bet      = parseFloat(p.bet || 0).toFixed(2);
                     const meLabel  = isMe ? ' <span style="color:#d4af37;font-size:10px;">(Tú)</span>' : '';
                     const turnArrow = isTurn ? '<div style="color:#d4af37;font-size:16px;">▼</div>' : '';
 
                     const statusMap = {
-                        betting: 'Apostando...', waiting: 'Esperando',
-                        playing: 'Jugando', standing: 'Plantado',
-                        bust: '¡Pasado! (Bust)', blackjack: '¡Blackjack!',
-                        win: '✅ Ganó', loss: '❌ Perdió',
+                        betting: 'Apostando...', waiting: 'Esperando', playing: 'Jugando', standing: 'Plantado',
+                        bust: '¡Pasado! (Bust)', blackjack: '¡Blackjack!', win: '✅ Ganó', loss: '❌ Perdió',
                         push: '🤝 Empate', ready: 'Listo'
                     };
 
@@ -326,16 +323,17 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
                         </div>
                     `;
                 }
-                document.getElementById('players-zone').innerHTML = playersHtml;
+                updateHTML('players-zone', playersHtml);
 
                 // Controls
                 renderControls(state, iAmCreator, phase);
 
-                // Result overlay
-                if (phase === 'finished' && lastPhase !== 'finished') {
-                    showResult(state, players);
-                }
+                if (phase === 'finished' && lastPhase !== 'finished') { showResult(state, players); }
                 lastPhase = phase;
+                
+                const canLeave = ['waiting', 'finished'].includes(phase);
+                const btnLeave = document.getElementById('btn-leave');
+                if(btnLeave) { btnLeave.disabled = !canLeave; btnLeave.style.opacity = canLeave ? '1' : '0.5'; }
 
             }).catch(e => console.error('Update error:', e));
         }
@@ -347,20 +345,14 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
             let html = '';
 
             if (phase === 'waiting') {
-                if (iAmCreator && playerCount >= 2) {
-                    html += `<button class="btn-game btn-start" onclick="sendAction('start')">🎮 Iniciar Partida</button>`;
-                } else if (iAmCreator) {
-                    html += `<button class="btn-game" disabled>Esperando jugadores (${playerCount}/2)...</button>`;
-                } else {
-                    html += `<button class="btn-game" disabled>Esperando que el creador inicie...</button>`;
-                }
+                if (iAmCreator && playerCount >= 2) html += `<button class="btn-game btn-start" onclick="sendAction('start')">🎮 Iniciar Partida</button>`;
+                else if (iAmCreator) html += `<button class="btn-game" disabled>Esperando jugadores (${playerCount}/2)...</button>`;
+                else html += `<button class="btn-game" disabled>Esperando que el líder inicie...</button>`;
             } else if (phase === 'betting') {
                 if (myPlayer && myPlayer.status === 'betting') {
                     html += `<input type="number" id="bet-amount" value="50" min="10" max="500" placeholder="€">`;
                     html += `<button class="btn-game" onclick="sendAction('bet')">💰 Apostar</button>`;
-                } else {
-                    html += `<button class="btn-game" disabled>Esperando tu turno de apuesta...</button>`;
-                }
+                } else html += `<button class="btn-game" disabled>Esperando tu turno de apuesta...</button>`;
             } else if (phase === 'playing') {
                 if (isMyTurn) {
                     html += `<button class="btn-game" onclick="sendAction('hit')">🃏 Pedir (Hit)</button>`;
@@ -368,20 +360,13 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
                     if (myPlayer && myPlayer.cards && myPlayer.cards.length === 2) {
                         html += `<button class="btn-game" onclick="sendAction('double')">⬆️ Doblar (x2)</button>`;
                     }
-                } else {
-                    html += `<button class="btn-game" disabled>Turno de otro jugador...</button>`;
-                }
-            } else if (phase === 'dealer_turn') {
-                html += `<button class="btn-game" disabled>El dealer está jugando...</button>`;
-            } else if (phase === 'finished') {
-                if (iAmCreator) {
-                    html += `<button class="btn-game btn-start" onclick="sendAction('new_round')">🔄 Nueva Ronda</button>`;
-                } else {
-                    html += `<button class="btn-game" disabled>Esperando nueva ronda...</button>`;
-                }
+                } else html += `<button class="btn-game" disabled>Turno de otro jugador...</button>`;
+            } else if (phase === 'dealer_turn') html += `<button class="btn-game" disabled>El dealer está jugando...</button>`;
+            else if (phase === 'finished') {
+                if (iAmCreator) html += `<button class="btn-game btn-start" onclick="sendAction('new_round')">🔄 Nueva Ronda</button>`;
+                else html += `<button class="btn-game" disabled>Esperando nueva ronda...</button>`;
             }
-
-            document.getElementById('action-controls').innerHTML = html;
+            updateHTML('action-controls', html);
         }
 
         function showResult(state, players) {
@@ -394,41 +379,29 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
             const btn      = document.getElementById('result-btn');
 
             const resultMap = {
-                win: { t: '🏆 ¡Ganaste!', color: '#4caf50' },
-                blackjack: { t: '🃏 ¡BLACKJACK!', color: '#ffd700' },
-                push: { t: '🤝 Empate', color: '#ff9800' },
-                loss: { t: '❌ Perdiste', color: '#f44336' },
+                win: { t: '🏆 ¡Ganaste!', color: '#4caf50' }, blackjack: { t: '🃏 ¡BLACKJACK!', color: '#ffd700' },
+                push: { t: '🤝 Empate', color: '#ff9800' }, loss: { t: '❌ Perdiste', color: '#f44336' },
                 bust: { t: '💥 ¡Te pasaste!', color: '#f44336' },
             };
 
             const r = resultMap[myPlayer.status] || { t: 'Ronda finalizada', color: '#fff' };
-            title.textContent  = r.t;
-            title.style.color  = r.color;
+            title.textContent = r.t; title.style.color = r.color;
 
             const payout = parseFloat(myPlayer.payout || 0);
             const bet    = parseFloat(myPlayer.bet || 0);
-            if (payout > 0) {
-                body.textContent = `Cobras: €${payout.toFixed(2)} | Ganancia: +€${(payout - bet).toFixed(2)}`;
-            } else {
-                body.textContent = `Perdiste: €${bet.toFixed(2)}`;
-            }
+            if (payout > 0) body.textContent = `Cobras: €${payout.toFixed(2)} | Ganancia: +€${(payout - bet).toFixed(2)}`;
+            else body.textContent = `Perdiste: €${bet.toFixed(2)}`;
 
-            const iAmCreator = state.is_creator;
-            btn.textContent  = iAmCreator ? 'Nueva Ronda' : 'Volver al Lobby';
-            btn.onclick      = iAmCreator ? () => { closeResult(); sendAction('new_round'); } : () => window.location.href = 'index.php';
-
+            btn.textContent  = state.is_creator ? 'Nueva Ronda' : 'Cerrar';
+            btn.onclick      = state.is_creator ? () => { closeResult(); sendAction('new_round'); } : () => closeResult();
             overlay.style.display = 'block';
         }
 
-        function closeResult() {
-            document.getElementById('result-overlay').style.display = 'none';
-        }
+        function closeResult() { document.getElementById('result-overlay').style.display = 'none'; }
 
-        // ── ENVIAR ACCIÓN ────────────────────────────────────────────────────────
         function sendAction(action) {
             const formData = new FormData();
-            formData.append('room_id', roomId);
-            formData.append('action', action);
+            formData.append('room_id', roomId); formData.append('action', action);
             if (action === 'bet') {
                 const amtEl = document.getElementById('bet-amount');
                 formData.append('amount', amtEl ? amtEl.value : 50);
@@ -438,39 +411,31 @@ if (!$room || $room['game_type'] !== 'blackjack') { header('Location: index.php'
                 .then(d => { if (d && d.error) alert('⚠️ ' + d.error); else updateTable(); })
                 .catch(e => console.error('Action error:', e));
         }
+        
+        function leaveRoom() {
+            if (document.getElementById('btn-leave').disabled) { alert('No puedes abandonar la sala en medio de una mano activa.'); return; }
+            const formData = new FormData(); formData.append('room_id', roomId); formData.append('action', 'leave');
+            fetch('api/rooms.php?action=leave', { method: 'POST', body: formData }).then(() => window.location.href = 'index.php');
+        }
 
-        // ── CHAT ─────────────────────────────────────────────────────────────────
         function updateChat() {
-            fetch(`api/chat.php?action=get&room_id=${roomId}`)
-            .then(r => r.text())
-            .then(html => {
+            fetch(`api/chat.php?action=get&room_id=${roomId}`).then(r => r.text()).then(html => {
                 const chatEl = document.getElementById('chat');
                 const wasAtBottom = chatEl.scrollHeight - chatEl.scrollTop <= chatEl.clientHeight + 30;
-                chatEl.innerHTML = html;
-                if (wasAtBottom) chatEl.scrollTop = chatEl.scrollHeight;
+                if(chatEl.innerHTML !== html) { chatEl.innerHTML = html; if (wasAtBottom) chatEl.scrollTop = chatEl.scrollHeight; }
             });
         }
 
         function sendChat() {
-            const input = document.getElementById('chat-msg');
-            if (!input.value.trim()) return;
-            const form = new FormData();
-            form.append('message', input.value);
-            fetch(`api/chat.php?action=send&room_id=${roomId}`, { method: 'POST', body: form })
-                .then(() => { input.value = ''; updateChat(); });
+            const input = document.getElementById('chat-msg'); if (!input.value.trim()) return;
+            const form = new FormData(); form.append('message', input.value);
+            fetch(`api/chat.php?action=send&room_id=${roomId}`, { method: 'POST', body: form }).then(() => { input.value = ''; updateChat(); });
         }
 
-        // ── INIT ─────────────────────────────────────────────────────────────────
-        // Join room first
-        const joinData = new FormData();
-        joinData.append('room_id', roomId);
-        joinData.append('action', 'join');
-        fetch('api/blackjack_action.php', { method: 'POST', body: joinData })
-            .then(() => { updateTable(); updateChat(); });
+        const joinData = new FormData(); joinData.append('room_id', roomId); joinData.append('action', 'join');
+        fetch('api/blackjack_action.php', { method: 'POST', body: joinData }).then(() => { updateTable(); updateChat(); });
 
-        // Polling every 1.5s
-        setInterval(updateTable, 1500);
-        setInterval(updateChat, 2000);
+        setInterval(updateTable, 1500); setInterval(updateChat, 2000);
     </script>
 </body>
 </html>
