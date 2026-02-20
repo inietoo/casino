@@ -153,33 +153,58 @@ function settlePokerHands(PDO $pdo, int $room_id, array &$state): void {
     $state['winner']       = $winnerId;
 }
 
+// Busca esta función en api/poker_action.php y reemplázala por completo
 function evaluateHand(array $cards): array {
-    // Simple hand evaluator - returns score and name
-    $rankMap  = ['2'=>2,'3'=>3,'4'=>4,'5'=>5,'6'=>6,'7'=>7,'8'=>8,'9'=>9,'10'=>10,'J'=>11,'Q'=>12,'K'=>13,'A'=>14];
-    $ranks    = []; $suits = [];
+    $rankMap = ['2'=>2,'3'=>3,'4'=>4,'5'=>5,'6'=>6,'7'=>7,'8'=>8,'9'=>9,'10'=>10,'J'=>11,'Q'=>12,'K'=>13,'A'=>14];
+    $ranks = []; $suits = [];
     foreach ($cards as $c) {
         [$r, $s] = explode('_', $c);
-        $ranks[] = $rankMap[$r] ?? 0;
+        $ranks[] = $rankMap[$r];
         $suits[] = $s;
     }
-    rsort($ranks);
 
+    // Comprobar Color (5 o más del mismo palo)
+    $suitCounts = array_count_values($suits);
+    $isFlush = false;
+    foreach($suitCounts as $s => $count) {
+        if($count >= 5) { $isFlush = true; break; }
+    }
+
+    // Comprobar Escalera (5 consecutivas únicas)
+    sort($ranks);
+    $uniqueRanks = array_values(array_unique($ranks));
+    $isStraight = false;
+    $highCard = 0;
+
+    // Caso especial As bajo (A-2-3-4-5)
+    if(in_array(14, $uniqueRanks) && in_array(2, $uniqueRanks) && in_array(3, $uniqueRanks) && in_array(4, $uniqueRanks) && in_array(5, $uniqueRanks)) {
+        $isStraight = true;
+        $highCard = 5;
+    }
+
+    for ($i = 0; $i <= count($uniqueRanks) - 5; $i++) {
+        if ($uniqueRanks[$i+4] - $uniqueRanks[$i] === 4) {
+            $isStraight = true;
+            $highCard = $uniqueRanks[$i+4];
+        }
+    }
+
+    // Conteo para parejas, tríos y póker
     $rankCounts = array_count_values($ranks);
     arsort($rankCounts);
-    $counts     = array_values($rankCounts);
-    $isFlush    = count(array_unique($suits)) === 1;
-    $isStraight = (max($ranks) - min($ranks) === 4 && count(array_unique($ranks)) === 5);
+    $counts = array_values($rankCounts);
 
-    if ($isFlush && $isStraight && max($ranks) === 14) return ['name'=>'royal_flush',    'score'=>9];
-    if ($isFlush && $isStraight)                       return ['name'=>'straight_flush',  'score'=>8];
-    if ($counts[0] === 4)                              return ['name'=>'four_of_a_kind',  'score'=>7];
-    if ($counts[0] === 3 && $counts[1] === 2)          return ['name'=>'full_house',      'score'=>6];
-    if ($isFlush)                                      return ['name'=>'flush',            'score'=>5];
-    if ($isStraight)                                   return ['name'=>'straight',         'score'=>4];
-    if ($counts[0] === 3)                              return ['name'=>'three_of_a_kind',  'score'=>3];
-    if ($counts[0] === 2 && $counts[1] === 2)          return ['name'=>'two_pair',         'score'=>2];
-    if ($counts[0] === 2)                              return ['name'=>'pair',             'score'=>1];
-    return ['name'=>'high_card', 'score'=>0];
+    if ($isFlush && $isStraight && $highCard === 14) return ['name'=>'Royal Flush', 'score'=>900];
+    if ($isFlush && $isStraight) return ['name'=>'Straight Flush', 'score'=>800 + $highCard];
+    if ($counts[0] === 4) return ['name'=>'Four of a Kind', 'score'=>700];
+    if ($counts[0] === 3 && $counts[1] >= 2) return ['name'=>'Full House', 'score'=>600];
+    if ($isFlush) return ['name'=>'Flush', 'score'=>500];
+    if ($isStraight) return ['name'=>'Straight', 'score'=>400 + $highCard];
+    if ($counts[0] === 3) return ['name'=>'Three of a Kind', 'score'=>300];
+    if ($counts[0] === 2 && $counts[1] === 2) return ['name'=>'Two Pair', 'score'=>200];
+    if ($counts[0] === 2) return ['name'=>'Pair', 'score'=>100];
+    
+    return ['name'=>'High Card', 'score'=>max($ranks)];
 }
 
 function updatePokerStats(PDO $pdo, int $room_id, array $state, string $winnerId, string $winType): void {
