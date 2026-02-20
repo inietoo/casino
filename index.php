@@ -217,5 +217,6 @@ if (!$user) {
                 });
         }
     </script>
+    <script src="/casino/assets/js/notifications.js"></script>
 </body>
 </html>
