@@ -94,6 +94,48 @@ elseif ($action === 'get_state') {
     exit;
 }
 
+// ─── 4. SALIR DE UNA SALA ──────────────────────────────────────────────────
+elseif ($action === 'leave') {
+    $room_id = (int)($_POST['room_id'] ?? 0);
+    if (!$room_id) { echo json_encode(['error' => 'room_id requerido']); exit; }
+
+    try {
+        $pdo->beginTransaction();
+        
+        // 1. Borrar al jugador de la sala
+        $stmt = $pdo->prepare("DELETE FROM room_players WHERE room_id = ? AND user_id = ?");
+        $stmt->execute([$room_id, $user_id]);
+
+        // 2. Comprobar si la sala quedó vacía
+        $stmt2 = $pdo->prepare("SELECT COUNT(*) FROM room_players WHERE room_id = ?");
+        $stmt2->execute([$room_id]);
+        
+        if ((int)$stmt2->fetchColumn() === 0) {
+            // Si no hay nadie, terminamos la sala permanentemente
+            $pdo->prepare("UPDATE rooms SET status = 'finished' WHERE id = ?")->execute([$room_id]);
+        } else {
+            // Si quedan jugadores, quitamos a este jugador del JSON game_state
+            $stmt3 = $pdo->prepare("SELECT state_json FROM game_state WHERE room_id = ?");
+            $stmt3->execute([$room_id]);
+            $stateRow = $stmt3->fetch(PDO::FETCH_ASSOC);
+            if ($stateRow) {
+                $state = json_decode($stateRow['state_json'], true);
+                if (isset($state['players'][(string)$user_id])) {
+                    unset($state['players'][(string)$user_id]);
+                    $pdo->prepare("UPDATE game_state SET state_json = ? WHERE room_id = ?")
+                        ->execute([json_encode($state), $room_id]);
+                }
+            }
+        }
+        $pdo->commit();
+        echo json_encode(['success' => true]);
+    } catch (PDOException $e) {
+        $pdo->rollBack();
+        echo json_encode(['error' => 'Error al salir de la sala']);
+    }
+    exit;
+}
+
 else {
     echo json_encode(['error' => 'Acción no reconocida']);
 }
