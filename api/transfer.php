@@ -53,8 +53,12 @@ try {
     // Sumar a él
     $pdo->prepare("UPDATE users SET balance = balance + ? WHERE id = ?")->execute([$amount, $target['id']]);
 
-    // 4. Registrar transacciones para el historial (opcional pero recomendado)
+    // 4. Registrar transacciones y notificaciones
     $pdo->prepare("INSERT INTO transactions (user_id, type, amount) VALUES (?, 'reload', ?)")->execute([$target['id'], $amount]);
+    
+    // NUEVO: INSERT DE LA NOTIFICACION
+    $msg = "Has recibido un Bizum de €" . number_format($amount, 2) . " de " . $me['username'];
+    $pdo->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)")->execute([$target['id'], $msg]);
 
     $pdo->commit();
     echo json_encode(['success' => true, 'new_balance' => $me['balance'] - $amount]);
@@ -63,3 +67,4 @@ try {
     if ($pdo->inTransaction()) $pdo->rollBack();
     echo json_encode(['error' => 'Error al procesar el envío']);
 }
+?>
