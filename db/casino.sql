@@ -3,8 +3,7 @@ SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
 SET time_zone = "+00:00";
 
--- Borramos las tablas si existen para poder reimportar sin errores
-DROP TABLE IF EXISTS `notifications`, `ranking_snapshot`, `poker_hand_log`, `poker_stats`, `blackjack_hand_log`, `blackjack_stats`, `transactions`, `chat_messages`, `game_state`, `room_players`, `rooms`, `users`;
+DROP TABLE IF EXISTS `notifications`, `poker_hand_log`, `poker_stats`, `blackjack_hand_log`, `blackjack_stats`, `transactions`, `chat_messages`, `game_state`, `room_players`, `rooms`, `users`;
 
 CREATE TABLE `users` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
@@ -40,7 +39,7 @@ CREATE TABLE `room_players` (
   `room_id` INT,
   `user_id` INT,
   `seat` INT,
-  `status` ENUM('active','folded','bust','spectator'),
+  `status` VARCHAR(20),
   `joined_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (`room_id`) REFERENCES rooms(`id`) ON DELETE CASCADE,
   FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
@@ -56,23 +55,32 @@ CREATE TABLE `game_state` (
   FOREIGN KEY (`room_id`) REFERENCES rooms(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `chat_messages` (
+CREATE TABLE `blackjack_hand_log` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
-  `room_id` INT,
   `user_id` INT,
-  `message` TEXT,
-  `sent_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (`room_id`) REFERENCES rooms(`id`) ON DELETE CASCADE,
+  `room_id` INT,
+  `player_cards` VARCHAR(255),
+  `dealer_cards` VARCHAR(255),
+  `player_final_value` INT,
+  `dealer_final_value` INT,
+  `result` VARCHAR(20),
+  `amount_bet` DECIMAL(10,2),
+  `amount_won` DECIMAL(10,2),
+  `played_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `transactions` (
+CREATE TABLE `poker_hand_log` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
   `user_id` INT,
   `room_id` INT,
-  `type` ENUM('bet','win','refund','reload'),
-  `amount` DECIMAL(10,2),
-  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `hole_cards` VARCHAR(100),
+  `community_cards` VARCHAR(200),
+  `hand_rank` VARCHAR(50),
+  `result` VARCHAR(20),
+  `pot_size` DECIMAL(10,2),
+  `amount_won` DECIMAL(10,2),
+  `played_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -85,12 +93,9 @@ CREATE TABLE `blackjack_stats` (
   `hands_push` INT DEFAULT 0,
   `blackjacks_hit` INT DEFAULT 0,
   `times_busted` INT DEFAULT 0,
-  `times_doubled` INT DEFAULT 0,
-  `times_split` INT DEFAULT 0,
   `total_wagered` DECIMAL(12,2) DEFAULT 0.00,
   `total_won` DECIMAL(12,2) DEFAULT 0.00,
   `biggest_win` DECIMAL(10,2) DEFAULT 0.00,
-  `biggest_loss` DECIMAL(10,2) DEFAULT 0.00,
   `current_win_streak` INT DEFAULT 0,
   `best_win_streak` INT DEFAULT 0,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -102,11 +107,32 @@ CREATE TABLE `poker_stats` (
   `user_id` INT UNIQUE,
   `hands_played` INT DEFAULT 0,
   `hands_won` INT DEFAULT 0,
+  `times_folded` INT DEFAULT 0,
   `total_wagered` DECIMAL(12,2) DEFAULT 0.00,
   `total_won` DECIMAL(12,2) DEFAULT 0.00,
   `current_win_streak` INT DEFAULT 0,
   `best_win_streak` INT DEFAULT 0,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `transactions` (
+  `id` INT PRIMARY KEY AUTO_INCREMENT,
+  `user_id` INT,
+  `room_id` INT DEFAULT 0,
+  `type` ENUM('bet','win','refund','reload'),
+  `amount` DECIMAL(10,2),
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `chat_messages` (
+  `id` INT PRIMARY KEY AUTO_INCREMENT,
+  `room_id` INT,
+  `user_id` INT,
+  `message` TEXT,
+  `sent_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`room_id`) REFERENCES rooms(`id`) ON DELETE CASCADE,
   FOREIGN KEY (`user_id`) REFERENCES users(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
