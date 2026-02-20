@@ -10,43 +10,47 @@ if (isLoggedIn()) {
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // ✅ CORREGIDO: acceder a campos concretos de $_POST
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
     $avatar   = $_POST['avatar'] ?? '🎲';
 
-    // Validaciones básicas
+    $allowed_avatars = ['🎲','🃏','🤑','👑','🦸','🔥','💎','🐉'];
+    if (!in_array($avatar, $allowed_avatars)) {
+        $avatar = '🎲';
+    }
+
     if (empty($username) || empty($password)) {
         $error = 'Rellena todos los campos.';
     } elseif (strlen($password) < 8) {
         $error = 'La contraseña debe tener al menos 8 caracteres.';
     } elseif (strlen($username) < 3 || strlen($username) > 50) {
         $error = 'El usuario debe tener entre 3 y 50 caracteres.';
+    } elseif (!preg_match('/^[a-zA-Z0-9_\-]+$/', $username)) {
+        $error = 'El usuario solo puede contener letras, números, guiones y guiones bajos.';
     } else {
-        // Comprobar si el usuario ya existe
         $check = $pdo->prepare("SELECT id FROM users WHERE username = ?");
         $check->execute([$username]);
         if ($check->fetch()) {
             $error = 'Ese nombre de usuario ya está en uso.';
         } else {
-            // ✅ CORREGIDO: hash correcto de la contraseña
             $hashed = password_hash($password, PASSWORD_BCRYPT);
 
             try {
                 $pdo->beginTransaction();
 
-                // ✅ CORREGIDO: execute con los parámetros correctos
                 $stmt = $pdo->prepare("INSERT INTO users (username, password, avatar, balance) VALUES (?, ?, ?, 1000.00)");
                 $stmt->execute([$username, $hashed, $avatar]);
                 $user_id = $pdo->lastInsertId();
 
-                // ✅ CORREGIDO: execute con [$user_id] en ambos inserts
                 $pdo->prepare("INSERT INTO blackjack_stats (user_id) VALUES (?)")->execute([$user_id]);
                 $pdo->prepare("INSERT INTO poker_stats (user_id) VALUES (?)")->execute([$user_id]);
+                $pdo->prepare("INSERT INTO bingo_stats (user_id) VALUES (?)")->execute([$user_id]);
 
                 $pdo->commit();
 
-                // ✅ CORREGIDO: guardar campos concretos en SESSION
+                // Regenerar ID de sesión para prevenir session fixation
+                session_regenerate_id(true);
+
                 $_SESSION['user_id']  = $user_id;
                 $_SESSION['username'] = $username;
 
@@ -55,8 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             } catch (Exception $e) {
                 $pdo->rollBack();
-                $error = 'Error al crear la cuenta. Inténtalo de nuevo.';
                 error_log('Register error: ' . $e->getMessage());
+                $error = 'Error al crear la cuenta. Inténtalo de nuevo.';
             }
         }
     }
@@ -113,11 +117,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <form method="POST">
             <label for="username">Nombre de usuario</label>
-            <input type="text" id="username" name="username" placeholder="Mínimo 3 caracteres"
-                   value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" required minlength="3" maxlength="50">
+            <input type="text" id="username" name="username"
+                   placeholder="Letras, números y guiones"
+                   value="<?= htmlspecialchars($_POST['username'] ?? '') ?>"
+                   required minlength="3" maxlength="50">
 
             <label for="password">Contraseña</label>
-            <input type="password" id="password" name="password" placeholder="Mínimo 8 caracteres" required minlength="8">
+            <input type="password" id="password" name="password"
+                   placeholder="Mínimo 8 caracteres" required minlength="8">
 
             <div class="section-label">Elige tu avatar:</div>
             <div class="avatar-grid">
@@ -127,7 +134,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $checked = (($_POST['avatar'] ?? '🎲') === $a) ? 'checked' : '';
                 ?>
                 <div>
-                    <input type="radio" name="avatar" id="av<?= $i ?>" value="<?= $a ?>" class="avatar-option" <?= $checked ?> <?= $i===0?'required':'' ?>>
+                    <input type="radio" name="avatar" id="av<?= $i ?>"
+                           value="<?= $a ?>" class="avatar-option"
+                           <?= $checked ?> <?= $i === 0 ? 'required' : '' ?>>
                     <label for="av<?= $i ?>" class="avatar-label"><?= $a ?></label>
                 </div>
                 <?php endforeach; ?>
