@@ -1,17 +1,35 @@
 document.addEventListener("DOMContentLoaded", function() {
-    fetch('/casino/api/stats.php')
+    fetch('api/stats.php')
     .then(r => r.json())
     .then(data => {
+        if(data.error) return;
+
         // Graficar historial evolutivo de balance general
-        if(document.getElementById('balanceChart')) {
-            const ctxLine = document.getElementById('balanceChart').getContext('2d');
+        const canvas = document.getElementById('balanceChart');
+        if(canvas) {
+            const ctxLine = canvas.getContext('2d');
             new Chart(ctxLine, {
                 type: 'line',
                 data: {
-                    labels: data.balance_evolution.map((_, i) => `Movimiento ${i+1}`),
-                    datasets:
+                    labels: data.balance_evolution.map((_, i) => `Mov ${i+1}`),
+                    datasets: [{
+                        label: 'Evolución Saldo (€)',
+                        data: data.balance_evolution,
+                        borderColor: '#d4af37',
+                        backgroundColor: 'rgba(212, 175, 55, 0.1)',
+                        fill: true,
+                        tension: 0.3
+                    }]
                 },
-                options: { responsive: true, plugins: { legend: { labels: { color: 'white' } } }, scales: { x: { ticks: { color: 'white' } }, y: { ticks: { color: '#d4af37' } } } }
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: 'white' } } }, 
+                    scales: { 
+                        x: { ticks: { color: '#888' }, grid: { color: '#222' } }, 
+                        y: { ticks: { color: '#d4af37' }, grid: { color: '#222' } } 
+                    } 
+                }
             });
         }
     })
