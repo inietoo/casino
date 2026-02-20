@@ -202,6 +202,7 @@ if ($action === 'state') {
         // Always refresh username/avatar
         $state['players'][$uid]['username'] = $p['username'];
         $state['players'][$uid]['avatar']   = $p['avatar'];
+        $state['players'][$uid]['balance']  = (float)$p['balance']; // Refrescar saldo siempre
     }
 
     // Add player count
@@ -284,8 +285,8 @@ if ($action === 'start') {
         echo json_encode(['error' => 'Solo el líder de la mesa puede iniciar']); exit;
     }
 
-    if (count($state['players'] ?? []) < 2) {
-        echo json_encode(['error' => 'Se necesitan al menos 2 jugadores']); exit;
+    if (count($state['players'] ?? []) < 1) { // CAMBIO: AHORA PERMITE JUGAR A 1 SOLA PERSONA
+        echo json_encode(['error' => 'Se necesita al menos 1 jugador']); exit;
     }
     if ($state['phase'] !== 'waiting') {
         echo json_encode(['error' => 'La partida ya ha comenzado']); exit;
@@ -324,7 +325,7 @@ if ($action === 'bet') {
     $balance = (float)$stmt->fetchColumn();
 
     if ($amount < 10 || $amount > 500 || $amount > $balance) {
-        echo json_encode(['error' => 'Apuesta inválida (mín €10, máx €500)']); exit;
+        echo json_encode(['error' => 'Apuesta inválida (mín €10, máx €500) o saldo insuficiente']); exit;
     }
 
     // Deduct bet
