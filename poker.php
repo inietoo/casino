@@ -2,7 +2,6 @@
 require 'config.php';
 if (!isLoggedIn()) { header('Location: login.php'); exit; }
 
-// ✅ FIX: acceder correctamente al parámetro GET
 $room_id  = (int)($_GET['room_id'] ?? 0);
 $user_id  = $_SESSION['user_id'];
 $username = $_SESSION['username'] ?? 'Jugador';
@@ -139,9 +138,8 @@ if (!$room || $room['game_type'] !== 'poker') { header('Location: index.php'); e
 </head>
 <body>
     <div class="game-area">
-        <!-- Header -->
         <div class="header">
-            <a href="index.php">← Lobby</a>
+            <button id="btn-leave" onclick="leaveRoom()" class="btn-game" style="background:#dc3545; color:white; font-size:12px; padding:6px 12px; margin-right: 15px;">← Salir al Lobby</button>
             <div class="header-info">
                 ♠ <?= htmlspecialchars($room['name']) ?>
                 &nbsp; <span class="players-count-badge" id="player-badge">0 jugadores</span>
@@ -149,7 +147,6 @@ if (!$room || $room['game_type'] !== 'poker') { header('Location: index.php'); e
             <div id="phase-label">Esperando...</div>
         </div>
 
-        <!-- Mesa ovalada con cartas comunitarias -->
         <div class="table-wrap">
             <div class="table-oval">
                 <div class="pot-display" id="pot">Pot: €0.00</div>
@@ -158,17 +155,14 @@ if (!$room || $room['game_type'] !== 'poker') { header('Location: index.php'); e
             </div>
         </div>
 
-        <!-- Jugadores -->
         <div id="waiting-msg" class="waiting-msg">Esperando a que se unan más jugadores...</div>
         <div class="players-ring" id="players"></div>
 
-        <!-- Controles -->
         <div class="controls-bar">
             <div id="action-controls" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;"></div>
         </div>
     </div>
 
-    <!-- Chat -->
     <div class="chat-area">
         <div class="chat-header">💬 Chat Póker</div>
         <div class="chat-messages" id="chat"></div>
@@ -181,21 +175,29 @@ if (!$room || $room['game_type'] !== 'poker') { header('Location: index.php'); e
 
     <script>
         const roomId   = <?= $room_id ?>;
-        const myUserId = <?= intval($user_id) ?>;   // ✅ FIX: usar user_id concreto
+        const myUserId = <?= intval($user_id) ?>;
         let   lastPhase = '';
+
+        // Función para actualizar HTML solo si ha cambiado (Evita parpadeos y reanimaciones)
+        function updateHTML(id, html) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (el.dataset.lastHtml !== html) {
+                el.innerHTML = html;
+                el.dataset.lastHtml = html;
+            }
+        }
 
         // ── RENDER CARTA ────────────────────────────────────────────────────────
         function renderCard(cardCode, isHidden) {
             if (isHidden || !cardCode || cardCode === 'hidden') {
                 return `<div class="card card-back"></div>`;
             }
-            // ✅ FIX: destructuring correcto
             const parts = cardCode.split('_');
             const rank  = parts[0];
             const suit  = parts[1];
             const suits = { 'S': '♠', 'H': '♥', 'C': '♣', 'D': '♦' };
             const isRed = (suit === 'H' || suit === 'D') ? 'red' : '';
-            // ✅ FIX: acceder al objeto suits con la clave correcta
             return `<div class="card ${isRed}">
                         <div class="card-rank">${rank}</div>
                         <div class="card-suit">${suits[suit] || suit}</div>
@@ -215,40 +217,38 @@ if (!$room || $room['game_type'] !== 'poker') { header('Location: index.php'); e
                 const iAmCreator  = state.is_creator;
 
                 // Badge
-                document.getElementById('player-badge').textContent = `${playerCount} jugador${playerCount !== 1 ? 'es' : ''}`;
+                updateHTML('player-badge', `${playerCount} jugador${playerCount !== 1 ? 'es' : ''}`);
 
                 // Phase label
                 const phaseMap = {
                     waiting: 'Esperando jugadores', preflop: 'Pre-Flop',
                     flop: 'Flop', turn: 'Turn', river: 'River', showdown: 'Showdown'
                 };
-                document.getElementById('phase-label').textContent = phaseMap[phase] || phase.toUpperCase();
+                updateHTML('phase-label', phaseMap[phase] || phase.toUpperCase());
 
                 // Pot
-                document.getElementById('pot').textContent = `Pot: €${parseFloat(state.pot || 0).toFixed(2)}`;
+                updateHTML('pot', `Pot: €${parseFloat(state.pot || 0).toFixed(2)}`);
 
                 // Community cards
                 const community  = state.community || [];
                 const commLabels = { 0: '', 3: 'FLOP', 4: 'TURN', 5: 'RIVER' };
                 let commHtml     = '';
                 community.forEach(c => commHtml += renderCard(c, false));
-                document.getElementById('community-cards').innerHTML = commHtml;
-                document.getElementById('community-label').textContent = commLabels[community.length] || '';
+                updateHTML('community-cards', commHtml);
+                updateHTML('community-label', commLabels[community.length] || '');
 
                 // Waiting
                 const waitEl = document.getElementById('waiting-msg');
-                if (playerCount < 2 && phase === 'waiting') {
-                    waitEl.style.display = 'block';
-                    waitEl.textContent = `Esperando jugadores... (${playerCount}/2 mínimo)`;
-                } else {
-                    waitEl.style.display = 'none';
+                const showWait = (playerCount < 2 && phase === 'waiting');
+                if (waitEl.style.display !== (showWait ? 'block' : 'none')) {
+                    waitEl.style.display = showWait ? 'block' : 'none';
                 }
 
                 // Players
                 let pHtml = '';
                 let pIdx  = 0;
                 for (const uid in players) {
-                    const p        = players[uid]; // ✅ FIX: acceder al jugador correcto
+                    const p        = players[uid];
                     const isMe     = parseInt(uid) === myUserId;
                     const isTurn   = state.current_turn == uid;
                     const isDealer = pIdx === 0;
@@ -270,7 +270,7 @@ if (!$room || $room['game_type'] !== 'poker') { header('Location: index.php'); e
                     }
 
                     const statusMap = {
-                        active: 'En juego', folded: 'Se fue', allin: '💥 ALL-IN',
+                        active: 'En juego', folded: 'Retirado', allin: '💥 ALL-IN',
                         winner: '🏆 GANADOR', waiting: 'Esperando'
                     };
 
@@ -295,12 +295,20 @@ if (!$room || $room['game_type'] !== 'poker') { header('Location: index.php'); e
                     `;
                     pIdx++;
                 }
-                document.getElementById('players').innerHTML = pHtml;
+                updateHTML('players', pHtml);
 
                 // Controls
                 renderControls(state, iAmCreator, phase, playerCount);
 
                 lastPhase = phase;
+                
+                // Add leave logic here
+                const canLeave = ['waiting', 'showdown'].includes(phase);
+                const btnLeave = document.getElementById('btn-leave');
+                if(btnLeave) {
+                    btnLeave.disabled = !canLeave;
+                    btnLeave.style.opacity = canLeave ? '1' : '0.5';
+                }
             }).catch(e => console.error('Poker update error:', e));
         }
 
@@ -318,7 +326,7 @@ if (!$room || $room['game_type'] !== 'poker') { header('Location: index.php'); e
                 } else if (iAmCreator) {
                     html += `<button class="btn-game" disabled>Esperando jugadores (${playerCount}/2)...</button>`;
                 } else {
-                    html += `<button class="btn-game" disabled>Esperando que el creador inicie...</button>`;
+                    html += `<button class="btn-game" disabled>Esperando que el líder inicie...</button>`;
                 }
             } else if (phase === 'showdown') {
                 if (iAmCreator) {
@@ -327,11 +335,14 @@ if (!$room || $room['game_type'] !== 'poker') { header('Location: index.php'); e
                     html += `<button class="btn-game" disabled>Esperando nueva mano...</button>`;
                 }
             } else if (isMyTurn && myPlayer && myPlayer.status === 'active') {
-                html += `<button class="btn-game btn-fold" onclick="pokerAction('fold')">Fold</button>`;
-                const callLabel = parseFloat(callAmount) > 0 ? `Call €${callAmount}` : 'Check';
+                // TRADUCCIÓN BOTONES PÓKER
+                html += `<button class="btn-game btn-fold" onclick="pokerAction('fold')">Retirarse (Fold)</button>`;
+                
+                const callLabel = parseFloat(callAmount) > 0 ? `Igualar (Call) €${callAmount}` : 'Pasar (Check)';
                 html += `<button class="btn-game btn-call" onclick="pokerAction('check_call')">${callLabel}</button>`;
+                
                 html += `<input type="number" id="raise-amount" value="${Math.max(maxBet * 2, 40)}" min="${maxBet + 1}" step="10" placeholder="€">`;
-                html += `<button class="btn-game btn-raise" onclick="pokerAction('raise')">Raise</button>`;
+                html += `<button class="btn-game btn-raise" onclick="pokerAction('raise')">Subir (Raise)</button>`;
             } else {
                 const statusMsg = myPlayer && myPlayer.status === 'folded'
                     ? 'Te has retirado de esta mano'
@@ -339,7 +350,7 @@ if (!$room || $room['game_type'] !== 'poker') { header('Location: index.php'); e
                 html += `<button class="btn-game" disabled>${statusMsg}</button>`;
             }
 
-            document.getElementById('action-controls').innerHTML = html;
+            updateHTML('action-controls', html);
         }
 
         // ── ACCIÓN PÓKER ────────────────────────────────────────────────────────
@@ -356,6 +367,19 @@ if (!$room || $room['game_type'] !== 'poker') { header('Location: index.php'); e
                 .then(d => { if (d && d.error) alert('⚠️ ' + d.error); else updatePoker(); })
                 .catch(e => console.error('Action error:', e));
         }
+        
+        // ── SALIR DE LA SALA ─────────────────────────────────────────────────────
+        function leaveRoom() {
+            if (document.getElementById('btn-leave').disabled) {
+                alert('No puedes abandonar la sala en medio de una mano activa.');
+                return;
+            }
+            const formData = new FormData();
+            formData.append('room_id', roomId);
+            formData.append('action', 'leave');
+            fetch('api/rooms.php?action=leave', { method: 'POST', body: formData })
+                .then(() => window.location.href = 'index.php');
+        }
 
         // ── CHAT ─────────────────────────────────────────────────────────────────
         function updateChat() {
@@ -364,8 +388,10 @@ if (!$room || $room['game_type'] !== 'poker') { header('Location: index.php'); e
             .then(html => {
                 const chatEl = document.getElementById('chat');
                 const wasAtBottom = chatEl.scrollHeight - chatEl.scrollTop <= chatEl.clientHeight + 30;
-                chatEl.innerHTML = html;
-                if (wasAtBottom) chatEl.scrollTop = chatEl.scrollHeight;
+                if(chatEl.innerHTML !== html) {
+                    chatEl.innerHTML = html;
+                    if (wasAtBottom) chatEl.scrollTop = chatEl.scrollHeight;
+                }
             });
         }
 
