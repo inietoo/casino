@@ -12,53 +12,11 @@ if (!$room_id) { echo json_encode(['error' => 'room_id requerido']); exit; }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
-/**
- * BUG PRINCIPAL CORREGIDO: Esta función faltaba completamente en el archivo original.
- * Las acciones 'start' y 'new_round' la llamaban y causaban un PHP Fatal Error silencioso.
- */
 function getState(PDO $pdo, int $room_id): array {
     $stmt = $pdo->prepare("SELECT state_json FROM game_state WHERE room_id = ?");
     $stmt->execute([$room_id]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return $row ? (json_decode($row['state_json'], true) ?: []) : [];
-}
-
-function generateBingoCard(): array {
-    $card = [];
-    $b = range(1, 15);  shuffle($b); $card = array_merge($card, array_slice($b, 0, 5));
-    $i = range(16, 30); shuffle($i); $card = array_merge($card, array_slice($i, 0, 5));
-    $n = range(31, 45); shuffle($n); $n_slice = array_slice($n, 0, 5); $n_slice[2] = 'FREE'; $card = array_merge($card, $n_slice);
-    $g = range(46, 60); shuffle($g); $card = array_merge($card, array_slice($g, 0, 5));
-    $o = range(61, 75); shuffle($o); $card = array_merge($card, array_slice($o, 0, 5));
-    return $card;
-}
-
-/**
- * BUG SECUNDARIO CORREGIDO: La función original comprobaba si TODOS los números
- * estaban marcados (bingo completo / Full House), lo cual es correcto para el Bingo Español.
- * Sin embargo, para hacer el juego más entretenido, ahora comprueba líneas y el cartón completo.
- * Puedes revertir a la versión anterior si prefieres solo Full House.
- */
-function checkBingoWinner(array $drawn, array $card): bool {
-    // Comprobar 5 filas horizontales
-    for ($row = 0; $row < 5; $row++) {
-        $line = array_slice($card, $row * 5, 5);
-        $complete = true;
-        foreach ($line as $num) {
-            if ($num !== 'FREE' && !in_array($num, $drawn)) { $complete = false; break; }
-        }
-        if ($complete) return true;
-    }
-    // Comprobar 5 columnas verticales
-    for ($col = 0; $col < 5; $col++) {
-        $complete = true;
-        for ($row = 0; $row < 5; $row++) {
-            $num = $card[$row * 5 + $col];
-            if ($num !== 'FREE' && !in_array($num, $drawn)) { $complete = false; break; }
-        }
-        if ($complete) return true;
-    }
-    return false;
 }
 
 function saveState(PDO $pdo, int $room_id, array $state): void {
@@ -68,14 +26,149 @@ function saveState(PDO $pdo, int $room_id, array $state): void {
         ->execute([$json, $phase, $room_id]);
 }
 
+function generateBingoCard(): array {
+    $card = [];
+    $b = range(1, 15);  shuffle($b); $card = array_merge($card, array_slice($b, 0, 5));
+    $i = range(16, 30); shuffle($i); $card = array_merge($card, array_slice($i, 0, 5));
+    $n = range(31, 45); shuffle($n);
+    $n_slice = array_slice($n, 0, 5);
+    $n_slice[2] = 'FREE';
+    $card = array_merge($card, $n_slice);
+    $g = range(46, 60); shuffle($g); $card = array_merge($card, array_slice($g, 0, 5));
+    $o = range(61, 75); shuffle($o); $card = array_merge($card, array_slice($o, 0, 5));
+    return $card;
+}
+
+/**
+ * Comprueba si un cartón tiene al menos UNA LÍNEA completa (horizontal o vertical).
+ * FREE del centro siempre cuenta como marcada.
+ */
+function checkLineWinner(array $drawn, array $card): bool {
+    // Filas horizontales
+    for ($row = 0; $row < 5; $row++) {
+        $ok = true;
+        for ($col = 0; $col < 5; $col++) {
+            $num = $card[$row * 5 + $col];
+            if ($num !== 'FREE' && !in_array($num, $drawn)) { $ok = false; break; }
+        }
+        if ($ok) return true;
+    }
+    // Columnas verticales
+    for ($col = 0; $col < 5; $col++) {
+        $ok = true;
+        for ($row = 0; $row < 5; $row++) {
+            $num = $card[$row * 5 + $col];
+            if ($num !== 'FREE' && !in_array($num, $drawn)) { $ok = false; break; }
+        }
+        if ($ok) return true;
+    }
+    return false;
+}
+
+/**
+ * Comprueba si un cartón tiene BINGO COMPLETO (todos los 25 números marcados).
+ */
+function checkBingoWinner(array $drawn, array $card): bool {
+    foreach ($card as $num) {
+        if ($num !== 'FREE' && !in_array($num, $drawn)) return false;
+    }
+    return true;
+}
+
+/**
+ * Calcula los dos botes al inicio del sorteo:
+ *   - Bote LÍNEA:  entre el 25% y el 40% del pot total (aleatorio)
+ *   - Bote BINGO:  entre el 50% y el 70% del pot total (aleatorio)
+ *
+ * Los porcentajes son independientes, así que hay un margen de "casa" variable.
+ */
+function calculatePrizes(float $pot): array {
+    $linePct  = mt_rand(25, 40) / 100;
+    $bingoPct = mt_rand(50, 70) / 100;
+    return [
+        'line_prize'  => round($pot * $linePct,  2),
+        'bingo_prize' => round($pot * $bingoPct, 2),
+    ];
+}
+
+/**
+ * Paga el bote de LÍNEA y lo registra. El sorteo CONTINÚA después.
+ */
+function payLinePrize(PDO $pdo, int $room_id, array &$state, array $winners): void {
+    $payout = count($winners) > 0 ? round($state['line_prize'] / count($winners), 2) : 0;
+    foreach ($winners as $uid) {
+        if ($payout > 0) {
+            $pdo->prepare("UPDATE users SET balance = balance + ? WHERE id = ?")
+                ->execute([$payout, $uid]);
+            $pdo->prepare("INSERT INTO transactions (user_id, room_id, type, amount) VALUES (?, ?, 'win', ?)")
+                ->execute([$uid, $room_id, $payout]);
+        }
+    }
+    $state['line_winners']     = $winners;
+    $state['line_payout_each'] = $payout;
+    $state['line_paid']        = true;
+    // ¡NO cambiamos phase! El sorteo sigue hasta el bingo completo.
+}
+
+/**
+ * Paga el bote de BINGO COMPLETO, registra estadísticas y cierra la ronda.
+ */
+function payBingoPrize(PDO $pdo, int $room_id, array &$state, array $winners): void {
+    $payout = count($winners) > 0 ? round($state['bingo_prize'] / count($winners), 2) : 0;
+    foreach ($winners as $uid) {
+        if ($payout > 0) {
+            $pdo->prepare("UPDATE users SET balance = balance + ? WHERE id = ?")
+                ->execute([$payout, $uid]);
+            $pdo->prepare("INSERT INTO transactions (user_id, room_id, type, amount) VALUES (?, ?, 'win', ?)")
+                ->execute([$uid, $room_id, $payout]);
+        }
+    }
+
+    // Estadísticas de todos los jugadores de la ronda
+    $bingoSet = array_flip($winners);
+    foreach ($state['players'] as $uid => $player) {
+        $isLineWinner  = in_array((string)$uid, array_map('strval', $state['line_winners'] ?? []));
+        $isBingoWinner = isset($bingoSet[(string)$uid]);
+        $cardsBought   = count($player['cards'] ?? []);
+        $bet           = $player['total_bet'] ?? 0;
+        $totalWon      = ($isLineWinner  ? ($state['line_payout_each']  ?? 0) : 0)
+                       + ($isBingoWinner ? $payout : 0);
+        try {
+            $pdo->prepare("
+                INSERT INTO bingo_stats (user_id, games_played, games_won, cards_bought, total_wagered, total_won)
+                VALUES (?, 1, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    games_played  = games_played  + 1,
+                    games_won     = games_won     + VALUES(games_won),
+                    cards_bought  = cards_bought  + VALUES(cards_bought),
+                    total_wagered = total_wagered + VALUES(total_wagered),
+                    total_won     = total_won     + VALUES(total_won)
+            ")->execute([$uid, $isBingoWinner ? 1 : 0, $cardsBought, $bet, $totalWon]);
+
+            $pdo->prepare("
+                INSERT INTO bingo_log (user_id, room_id, cards_bought, result, amount_bet, amount_won)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ")->execute([$uid, $room_id, $cardsBought, $isBingoWinner ? 'win' : 'loss', $bet, $totalWon]);
+        } catch (PDOException $e) {
+            error_log('Bingo stats: ' . $e->getMessage());
+        }
+    }
+
+    $state['bingo_winners']     = $winners;
+    $state['bingo_payout_each'] = $payout;
+    $state['phase']             = 'finished';
+}
+
 // ─── OBTENER ESTADO ──────────────────────────────────────────────────────────
 if ($action === 'state') {
     $pdo->beginTransaction();
+
     $stmt = $pdo->prepare("SELECT state_json FROM game_state WHERE room_id = ? FOR UPDATE");
     $stmt->execute([$room_id]);
     $row   = $stmt->fetch(PDO::FETCH_ASSOC);
     $state = $row ? (json_decode($row['state_json'], true) ?: []) : [];
 
+    // Sincronizar jugadores desde la DB
     $stmtP = $pdo->prepare("
         SELECT rp.user_id, u.username, u.avatar, u.balance
         FROM room_players rp
@@ -105,72 +198,65 @@ if ($action === 'state') {
         }
     }
 
-    // ── Sacar bola automáticamente cada 3 segundos si está jugando ──
+    // ── Motor de sorteo: saca una bola cada 3 segundos ─────────────────────
     if (($state['phase'] ?? '') === 'playing') {
         $last_draw = $state['last_draw'] ?? time();
 
         if (time() - $last_draw >= 3 && !empty($state['deck'])) {
-            $drawn_num       = array_shift($state['deck']);
+            $drawn_num        = array_shift($state['deck']);
             $state['drawn'][] = $drawn_num;
             $state['last_draw'] = time();
             $needsSave = true;
 
-            // Comprobar ganadores
-            $winners = [];
+            // ── PASO 1: comprobar LÍNEA (solo si aún no se ha pagado) ────────
+            if (empty($state['line_paid'])) {
+                $lineWinners = [];
+                foreach ($state['players'] as $uid => $player) {
+                    foreach ($player['cards'] as $card) {
+                        if (checkLineWinner($state['drawn'], $card)) {
+                            $lineWinners[] = (string)$uid;
+                            break; // un jugador solo gana línea una vez
+                        }
+                    }
+                }
+                if (!empty($lineWinners)) {
+                    payLinePrize($pdo, $room_id, $state, $lineWinners);
+                    // El sorteo CONTINÚA — no cambiamos phase
+                }
+            }
+
+            // ── PASO 2: comprobar BINGO COMPLETO ─────────────────────────────
+            $bingoWinners = [];
             foreach ($state['players'] as $uid => $player) {
                 foreach ($player['cards'] as $card) {
                     if (checkBingoWinner($state['drawn'], $card)) {
-                        $winners[] = $uid;
+                        $bingoWinners[] = (string)$uid;
                         break;
                     }
                 }
             }
-
-            if (!empty($winners)) {
-                $state['phase']   = 'finished';
-                $state['winners'] = $winners;
-                $pot     = $state['pot'] ?? 0;
-                $payout  = $pot > 0 ? $pot / count($winners) : 0;
-
-                foreach ($state['players'] as $uid => &$player) {
-                    $isWinner   = in_array($uid, $winners);
-                    $wonAmt     = $isWinner ? $payout : 0;
-                    $bet        = $player['total_bet'] ?? 0;
-                    $cardsBought = count($player['cards']);
-
-                    if ($isWinner && $wonAmt > 0) {
-                        $pdo->prepare("UPDATE users SET balance = balance + ? WHERE id = ?")->execute([$wonAmt, $uid]);
-                        $pdo->prepare("INSERT INTO transactions (user_id, room_id, type, amount) VALUES (?, ?, 'win', ?)")->execute([$uid, $room_id, $wonAmt]);
-                    }
-
-                    // Actualizar estadísticas (tabla bingo_stats debe existir)
-                    try {
-                        $pdo->prepare("
-                            INSERT INTO bingo_stats (user_id, games_played, games_won, cards_bought, total_wagered, total_won)
-                            VALUES (?, 1, ?, ?, ?, ?)
-                            ON DUPLICATE KEY UPDATE
-                                games_played  = games_played + 1,
-                                games_won     = games_won    + VALUES(games_won),
-                                cards_bought  = cards_bought + VALUES(cards_bought),
-                                total_wagered = total_wagered + VALUES(total_wagered),
-                                total_won     = total_won    + VALUES(total_won)
-                        ")->execute([$uid, $isWinner ? 1 : 0, $cardsBought, $bet, $wonAmt]);
-
-                        $pdo->prepare("
-                            INSERT INTO bingo_log (user_id, room_id, cards_bought, result, amount_bet, amount_won)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        ")->execute([$uid, $room_id, $cardsBought, $isWinner ? 'win' : 'loss', $bet, $wonAmt]);
-                    } catch (PDOException $e) {
-                        error_log('Bingo stats error: ' . $e->getMessage());
-                    }
-                }
-                unset($player);
+            if (!empty($bingoWinners)) {
+                payBingoPrize($pdo, $room_id, $state, $bingoWinners);
+                // phase pasa a 'finished' dentro de payBingoPrize
             }
 
-            // Sin más bolas: empate / nadie ganó
+            // ── PASO 3: mazo agotado sin bingo completo ───────────────────────
             if (empty($state['deck']) && ($state['phase'] ?? '') === 'playing') {
-                $state['phase']   = 'finished';
-                $state['winners'] = []; // nadie ganó
+                // Si nadie hizo ni línea, devolver apuestas
+                if (empty($state['line_paid'])) {
+                    foreach ($state['players'] as $uid => $player) {
+                        $refund = $player['total_bet'] ?? 0;
+                        if ($refund > 0) {
+                            $pdo->prepare("UPDATE users SET balance = balance + ? WHERE id = ?")
+                                ->execute([$refund, $uid]);
+                            $pdo->prepare("INSERT INTO transactions (user_id, room_id, type, amount) VALUES (?, ?, 'win', ?)")
+                                ->execute([$uid, $room_id, $refund]);
+                        }
+                    }
+                }
+                $state['phase']         = 'finished';
+                $state['bingo_winners'] = [];
+                $state['no_bingo_winner'] = true;
             }
         }
     }
@@ -181,14 +267,14 @@ if ($action === 'state') {
 
     $pdo->commit();
 
-    // Meta-datos para el cliente
+    // Meta para el cliente
     $stmt2 = $pdo->prepare("SELECT user_id FROM room_players WHERE room_id = ? ORDER BY seat ASC LIMIT 1");
     $stmt2->execute([$room_id]);
     $state['is_creator']   = ($stmt2->fetchColumn() == $user_id);
     $state['my_user_id']   = $user_id;
     $state['player_count'] = count($dbPlayers);
 
-    // Ocultar cartones de otros jugadores
+    // Ocultar cartones ajenos (solo mostrar conteo)
     foreach ($state['players'] as $uid => &$p) {
         if ((string)$uid !== (string)$user_id) {
             $p['cards_count'] = count($p['cards'] ?? []);
@@ -196,7 +282,7 @@ if ($action === 'state') {
         }
     }
     unset($p);
-    unset($state['deck']); // Nunca exponer el mazo al cliente
+    unset($state['deck']); // Nunca exponer el mazo
 
     echo json_encode($state);
     exit;
@@ -281,11 +367,10 @@ if ($action === 'buy') {
                 'total_bet' => 0,
             ];
         }
-
-        $state['players'][$uid]['username']   = $uInfo['username'];
-        $state['players'][$uid]['avatar']     = $uInfo['avatar'];
-        $state['players'][$uid]['cards'][]    = generateBingoCard();
-        $state['players'][$uid]['total_bet']  = ($state['players'][$uid]['total_bet'] ?? 0) + $cardCost;
+        $state['players'][$uid]['username']  = $uInfo['username'];
+        $state['players'][$uid]['avatar']    = $uInfo['avatar'];
+        $state['players'][$uid]['cards'][]   = generateBingoCard();
+        $state['players'][$uid]['total_bet'] = ($state['players'][$uid]['total_bet'] ?? 0) + $cardCost;
         $state['pot'] = ($state['pot'] ?? 0) + $cardCost;
 
         saveState($pdo, $room_id, $state);
@@ -301,7 +386,6 @@ if ($action === 'buy') {
 
 // ─── INICIAR SORTEO ───────────────────────────────────────────────────────────
 if ($action === 'start') {
-    // CORREGIDO: Antes faltaba getState(), esto causaba PHP Fatal Error silencioso
     $state = getState($pdo, $room_id);
 
     $stmt = $pdo->prepare("SELECT user_id FROM room_players WHERE room_id = ? ORDER BY seat ASC LIMIT 1");
@@ -310,7 +394,6 @@ if ($action === 'start') {
         echo json_encode(['error' => 'Solo el líder puede iniciar el sorteo']);
         exit;
     }
-
     if (($state['phase'] ?? 'waiting') !== 'waiting') {
         echo json_encode(['error' => 'El sorteo ya ha comenzado']);
         exit;
@@ -325,24 +408,36 @@ if ($action === 'start') {
         exit;
     }
 
+    // Calcular los dos botes aleatoriamente al inicio
+    $prizes = calculatePrizes((float)($state['pot'] ?? 0));
+
     $deck = range(1, 75);
     shuffle($deck);
 
-    $state['phase']     = 'playing';
-    $state['deck']      = $deck;
-    $state['drawn']     = [];
-    $state['last_draw'] = time() - 3; // Para que saque la primera bola inmediatamente
+    $state['phase']        = 'playing';
+    $state['deck']         = $deck;
+    $state['drawn']        = [];
+    $state['last_draw']    = time() - 3; // primera bola sale casi al instante
+    $state['line_prize']   = $prizes['line_prize'];
+    $state['bingo_prize']  = $prizes['bingo_prize'];
+    $state['line_paid']    = false;
+    $state['line_winners'] = [];
+    unset($state['bingo_winners'], $state['no_bingo_winner'],
+          $state['line_payout_each'], $state['bingo_payout_each']);
 
     saveState($pdo, $room_id, $state);
     $pdo->prepare("UPDATE rooms SET status = 'playing' WHERE id = ?")->execute([$room_id]);
 
-    echo json_encode(['success' => true]);
+    echo json_encode([
+        'success'     => true,
+        'line_prize'  => $prizes['line_prize'],
+        'bingo_prize' => $prizes['bingo_prize'],
+    ]);
     exit;
 }
 
 // ─── NUEVA RONDA ─────────────────────────────────────────────────────────────
 if ($action === 'new_round') {
-    // CORREGIDO: Antes faltaba getState(), misma causa del bug
     $state = getState($pdo, $room_id);
 
     $stmt = $pdo->prepare("SELECT user_id FROM room_players WHERE room_id = ? ORDER BY seat ASC LIMIT 1");
@@ -358,11 +453,16 @@ if ($action === 'new_round') {
     }
     unset($p);
 
-    $state['phase']   = 'waiting';
-    $state['drawn']   = [];
-    $state['deck']    = [];
-    $state['pot']     = 0;
-    unset($state['winners']);
+    $state['phase']        = 'waiting';
+    $state['drawn']        = [];
+    $state['deck']         = [];
+    $state['pot']          = 0;
+    $state['line_prize']   = 0;
+    $state['bingo_prize']  = 0;
+    $state['line_paid']    = false;
+    $state['line_winners'] = [];
+    unset($state['bingo_winners'], $state['no_bingo_winner'],
+          $state['line_payout_each'], $state['bingo_payout_each']);
 
     saveState($pdo, $room_id, $state);
     $pdo->prepare("UPDATE rooms SET status = 'waiting' WHERE id = ?")->execute([$room_id]);
