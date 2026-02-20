@@ -33,7 +33,7 @@ if ($action === 'get') {
 
         $html = '';
         foreach ($messages as $msg) {
-            $time = date('H:i', strtotime($msg['sent_at']));
+            $time  = date('H:i', strtotime($msg['sent_at']));
             $html .= '<div style="margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,0.05);">'
                    . '<span style="color:#d4af37; font-size:11px;">[' . $time . '] </span>'
                    . '<strong>' . htmlspecialchars($msg['avatar'] . ' ' . $msg['username']) . ':</strong> '
@@ -50,14 +50,28 @@ if ($action === 'get') {
 
 // ─── ENVIAR MENSAJE ──────────────────────────────────────────────────────────
 if ($action === 'send') {
+    header('Content-Type: application/json');
+
     $message = trim($_POST['message'] ?? '');
     if (empty($message)) {
         echo json_encode(['error' => 'Mensaje vacío']);
         exit;
     }
+
     $message = mb_substr($message, 0, 300);
 
     try {
+        // CORRECCIÓN: Rate limiting — máximo 3 mensajes por segundo por usuario
+        $stmtRate = $pdo->prepare("
+            SELECT COUNT(*) FROM chat_messages
+            WHERE user_id = ? AND sent_at > DATE_SUB(NOW(), INTERVAL 2 SECOND)
+        ");
+        $stmtRate->execute([$user_id]);
+        if ((int)$stmtRate->fetchColumn() >= 3) {
+            echo json_encode(['error' => 'Estás enviando mensajes demasiado rápido. Espera un momento.']);
+            exit;
+        }
+
         $stmt = $pdo->prepare("INSERT INTO chat_messages (room_id, user_id, message) VALUES (?, ?, ?)");
         $stmt->execute([$room_id, $user_id, $message]);
         echo json_encode(['success' => true]);
